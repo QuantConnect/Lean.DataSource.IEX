@@ -73,12 +73,6 @@ namespace QuantConnect.IEX.Tests
             "UNM", "RL", "XRX", "DVN", "MRO", "DISCA", "NOV", "APA", "SLG", "HFC", "UAA", "UA", "FTI", "NWS"
         };
 
-        [SetUp]
-        public void Setup()
-        {
-            Log.DebuggingEnabled = Config.GetBool("debug-mode");
-        }
-
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
         {
             Task.Run(() =>
@@ -108,19 +102,19 @@ namespace QuantConnect.IEX.Tests
         [Test]
         public void IEXCouldSubscribeManyTimes()
         {
-            var iex = new IEXDataQueueHandler();
-
+            var iexDataQueueHandler = new IEXDataQueueHandler();
+            
             var configs = new[] {
-                GetSubscriptionDataConfig<TradeBar>(Symbol.Create("GOOG", SecurityType.Equity, Market.USA), Resolution.Second),
+                GetSubscriptionDataConfig<TradeBar>(Symbols.GOOG, Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("FB", SecurityType.Equity, Market.USA), Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbol.Create("MSFT", SecurityType.Equity, Market.USA), Resolution.Second)
+                GetSubscriptionDataConfig<TradeBar>(Symbols.AAPL, Resolution.Second),
+                GetSubscriptionDataConfig<TradeBar>(Symbols.MSFT, Resolution.Second)
             };
 
-            Array.ForEach(configs, (c) =>
+            foreach (var config in configs)
             {
                 ProcessFeed(
-                    iex.Subscribe(c, (s, e) => { }),
+                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
                     tick =>
                     {
                         if (tick != null)
@@ -128,23 +122,18 @@ namespace QuantConnect.IEX.Tests
                             Log.Trace(tick.ToString());
                         }
                     });
-            });
+            }
 
             Thread.Sleep(20000);
 
-            Log.Trace("Unsubscribing from all except AAPL");
-
-            Array.ForEach(configs, (c) =>
+            foreach (var config in configs)
             {
-                if (!string.Equals(c.Symbol.Value, "AAPL"))
-                {
-                    iex.Unsubscribe(c);
-                }
-            });
+                iexDataQueueHandler.Unsubscribe(config);
+            }
 
             Thread.Sleep(20000);
 
-            iex.Dispose();
+            iexDataQueueHandler.Dispose();
         }
 
         [Test]
