@@ -341,47 +341,71 @@ namespace QuantConnect.IEX.Tests
 
         #region History provider tests
 
-        public static TestCaseData[] TestParameters
+        public static IEnumerable<TestCaseData> TestParameters
         {
             get
             {
-                return new[]
-                {
-                    // valid parameters
-                    new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), true, false),
-                    new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(5), true, false),
+                // valid parameters
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), true);
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(5), true);
 
-                    // invalid resolution == empty result.
-                    new TestCaseData(Symbols.SPY, Resolution.Tick, typeof(TradeBar), TimeSpan.FromSeconds(15), false, false),
-                    new TestCaseData(Symbols.SPY, Resolution.Second, typeof(TradeBar), Time.OneMinute, false, false),
-                    new TestCaseData(Symbols.SPY, Resolution.Hour, typeof(TradeBar), Time.OneDay, false, false),
+                // invalid resolution == empty result.
+                yield return new TestCaseData(Symbols.SPY, Resolution.Tick, typeof(TradeBar), TimeSpan.FromSeconds(15), false);
+                yield return new TestCaseData(Symbols.SPY, Resolution.Second, typeof(TradeBar), Time.OneMinute, false);
+                yield return new TestCaseData(Symbols.SPY, Resolution.Hour, typeof(TradeBar), Time.OneDay, false);
 
-                    // invalid period == empty result
-                    new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(45), false, false), // beyond 30 days
-                    new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(-15), false, false), // date in future
+                // invalid period == empty result
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(45), false); // beyond 30 days
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(-15), false); // date in future
 
-                    // invalid data type = empty result
-                    new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(QuoteBar), TimeSpan.FromDays(15), false, false),
+                // invalid data type = empty result
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(QuoteBar), TimeSpan.FromDays(15), false);
 
-                    // invalid symbol: XYZ -> not found Exception
-                    new TestCaseData(Symbol.Create("XYZ", SecurityType.Equity, Market.FXCM), Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), false, true),
-
-                    // invalid security type, no exception, empty result
-                    new TestCaseData(Symbols.EURUSD, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), false, false)
-                };
+                // invalid security type, no exception, empty result
+                yield return new TestCaseData(Symbols.EURUSD, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), false);
             }
         }
 
         [Test, TestCaseSource(nameof(TestParameters))]
-        public void IEXCouldGetHistory(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period, bool received, bool throwsException)
+        public void IEXCouldGetHistory(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period, bool received)
         {
-            TestDelegate test = () =>
-            {
-                var historyProvider = new IEXDataQueueHandler();
-                var now = DateTime.UtcNow;
+            var slices = GetHistory(symbol, resolution, dataType, period);
 
-                var requests = new[]
-                {
+            if (received)
+            {
+                // Slices not empty
+                Assert.IsNotEmpty(slices);
+
+                // And are ordered by time
+                Assert.That(slices, Is.Ordered.By("Time"));
+            }
+            else
+            {
+                Assert.IsEmpty(slices);
+            }
+        }
+
+        public static IEnumerable<TestCaseData> InvalidSymbolTestCaseData
+        {
+            get
+            {
+                yield return new TestCaseData(Symbol.Create("XYZ", SecurityType.Equity, Market.FXCM), Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15));
+            }
+        }
+
+        [Test, TestCaseSource(nameof(InvalidSymbolTestCaseData))]
+        public void GetHistoryInvalidSymbolThrowException(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period)
+        {
+            Assert.Throws<Exception>(() => GetHistory(symbol, resolution, dataType, period));
+        }
+
+        private static Slice[] GetHistory(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period)
+        {
+            var historyProvider = new IEXDataQueueHandler();
+            var now = DateTime.UtcNow;
+
+            var requests = new[]
+            {
                     new HistoryRequest(now.Add(-period),
                                        now,
                                        dataType,
@@ -396,31 +420,9 @@ namespace QuantConnect.IEX.Tests
                                        TickType.Trade)
                 };
 
-                var slices = historyProvider.GetHistory(requests, TimeZones.Utc).ToArray();
-                Log.Trace("Data points retrieved: " + historyProvider.DataPointCount);
-
-                if (received)
-                {
-                    // Slices not empty
-                    Assert.IsNotEmpty(slices);
-
-                    // And are ordered by time
-                    Assert.That(slices, Is.Ordered.By("Time"));
-                }
-                else
-                {
-                    Assert.IsEmpty(slices);
-                }
-            };
-
-            if (throwsException)
-            {
-                Assert.That(test, Throws.Exception);
-            }
-            else
-            {
-                Assert.DoesNotThrow(test);
-            }
+            var slices = historyProvider.GetHistory(requests, TimeZones.Utc).ToArray();
+            Log.Trace("Data points retrieved: " + historyProvider.DataPointCount);
+            return slices;
         }
 
         #endregion

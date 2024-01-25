@@ -14,6 +14,7 @@
 */
 
 using NodaTime;
+using RestSharp;
 using System.Net;
 using Newtonsoft.Json;
 using QuantConnect.Data;
@@ -47,6 +48,11 @@ namespace QuantConnect.IEX
         private readonly IEXEventSourceCollection _clients;
         private readonly ManualResetEvent _refreshEvent = new ManualResetEvent(false);
         private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+
+        /// <summary>
+        /// Client instance to translate RestRequests into Http requests and process response result
+        /// </summary>
+        private readonly RestClient _restClient = new();
 
         private readonly ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
         private readonly ConcurrentDictionary<string, long> _iexLastTradeTime = new ConcurrentDictionary<string, long>();
@@ -326,30 +332,35 @@ namespace QuantConnect.IEX
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
-                Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX require an API key.");
+                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: History calls for IEX require an API key.");
                 return Enumerable.Empty<Slice>();
             }
 
             // Create subscription objects from the configs
             var subscriptions = new List<Subscription>();
-            requests.DoForEach(request =>
+            foreach (var request in requests)
             {
                 // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
                 if (request.DataType != typeof(TradeBar) && !_invalidHistDataTypeWarningFired)
                 {
-                    Log.Error($"IEXDataQueueHandler.GetHistory(): Not supported data type - {request.DataType.Name}. " +
+                    Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
                         "Currently available support only for historical of type - TradeBar");
                     _invalidHistDataTypeWarningFired = true;
-                    return;
+                    return Enumerable.Empty<Slice>();
+                }
+
+                if (request.Symbol.SecurityType != SecurityType.Equity)
+                {
+                    Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                    return Enumerable.Empty<Slice>();
                 }
 
                 var history = ProcessHistoryRequests(request);
                 var subscription = CreateSubscription(request, history);
                 subscriptions.Add(subscription);
-            });
+            }
 
-            var result = subscriptions.Any() ? CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone) : Enumerable.Empty<Slice>();
-            return result;
+            return CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone);
         }
 
         /// <summary>
@@ -438,20 +449,13 @@ namespace QuantConnect.IEX
             }
 
             // Download and parse data
-            var requests = new List<Task<string>>();
+            var responses = new List<string>();
 
-            urls.DoForEach(url =>
+            foreach (var url in urls)
             {
-                requests.Add(Task.Run(async () =>
-                {
-                    using (var client = new WebClient())
-                    {
-                        return await client.DownloadStringTaskAsync(new Uri(url)).ConfigureAwait(false);
-                    }
-                }));
-            });
-
-            var responses = Task.WhenAll(requests).Result;
+                var response = ExecuteGetRequest(url);
+                responses.Add(response);
+            }
 
             foreach (var response in responses)
             {
@@ -512,6 +516,24 @@ namespace QuantConnect.IEX
                     yield return tradeBar;
                 }
             }
+        }
+
+        /// <summary>
+        /// Executes a REST GET request and retrieves the response content.
+        /// </summary>
+        /// <param name="url">The full URI, including scheme, host, path, and query parameters (e.g., {scheme}://{host}/{path}?{query}).</param>
+        /// <returns>The response content as a string.</returns>
+        /// <exception cref="Exception">Thrown when the GET request fails or returns a non-OK status code.</exception>
+        private string ExecuteGetRequest(string url)
+        {
+            var response = _restClient.Execute(new RestRequest(url, Method.GET));
+
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)} failed: [{(int)response.StatusCode}] {response.StatusDescription}, Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
+            }
+
+            return response.Content;
         }
 
         #endregion
