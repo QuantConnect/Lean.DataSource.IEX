@@ -35,6 +35,7 @@ namespace QuantConnect.IEX.Tests
     [Explicit("Tests are dependent on network and are long")]
     public class IEXDataQueueHandlerTests
     {
+        private IEXDataQueueHandler iexDataQueueHandler;
 
         private readonly string _apiKey = Config.Get("iex-cloud-api-key");
 
@@ -73,6 +74,19 @@ namespace QuantConnect.IEX.Tests
             "UNM", "RL", "XRX", "DVN", "MRO", "DISCA", "NOV", "APA", "SLG", "HFC", "UAA", "UA", "FTI", "NWS"
         };
 
+
+        [SetUp]
+        public void SetUp()
+        {
+            iexDataQueueHandler = new IEXDataQueueHandler();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            iexDataQueueHandler.Dispose();
+        }
+
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
         {
             Task.Run(() =>
@@ -101,9 +115,7 @@ namespace QuantConnect.IEX.Tests
         /// </summary>
         [Test]
         public void IEXCouldSubscribeManyTimes()
-        {
-            var iexDataQueueHandler = new IEXDataQueueHandler();
-            
+        {            
             var configs = new[] {
                 GetSubscriptionDataConfig<TradeBar>(Symbols.GOOG, Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("FB", SecurityType.Equity, Market.USA), Resolution.Second),
@@ -132,15 +144,12 @@ namespace QuantConnect.IEX.Tests
             }
 
             Thread.Sleep(20000);
-
-            iexDataQueueHandler.Dispose();
         }
 
         [Test]
         public void IEXCouldSubscribeAndUnsubscribe()
         {
             // MBLY is the most liquid IEX instrument
-            var iex = new IEXDataQueueHandler();
             var unsubscribed = false;
             Action<BaseData> callback = (tick) =>
             {
@@ -162,13 +171,13 @@ namespace QuantConnect.IEX.Tests
             Array.ForEach(configs, (c) =>
             {
                 ProcessFeed(
-                    iex.Subscribe(c, (s, e) => { }),
+                    iexDataQueueHandler.Subscribe(c, (s, e) => { }),
                     callback);
             });
 
             Thread.Sleep(20000);
 
-            iex.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
+            iexDataQueueHandler.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
 
             Log.Trace("Unsubscribing");
             Thread.Sleep(2000);
@@ -176,7 +185,6 @@ namespace QuantConnect.IEX.Tests
             unsubscribed = true;
 
             Thread.Sleep(20000);
-            iex.Dispose();
         }
 
         [Test]
@@ -336,57 +344,57 @@ namespace QuantConnect.IEX.Tests
         /// <remarks>
         /// The test parameters include valid and invalid combinations of input data.
         /// </remarks>
-        public static IEnumerable<TestCaseData> TestParameters
+        internal static IEnumerable<TestCaseData> TestParameters
         {
             get
             {
                 // Valid parameters
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15), true)
                     .SetDescription("Valid parameters - Daily resolution, 15 days period.")
                     .SetCategory("Valid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(5), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(5), true)
                     .SetDescription("Valid parameters - Minute resolution, 5 days period.")
                     .SetCategory("Valid");
 
                 // Invalid resolution - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Tick, typeof(TradeBar), TimeSpan.FromSeconds(15), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Tick, TickType.Trade, TimeSpan.FromSeconds(15), false)
                     .SetDescription("Invalid resolution - Tick resolution, 15 seconds period.")
                     .SetCategory("Invalid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Second, typeof(TradeBar), Time.OneMinute, false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Second, TickType.Trade, Time.OneMinute, false)
                     .SetDescription("Invalid resolution - Second resolution, 1 minute period.")
                     .SetCategory("Invalid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Hour, typeof(TradeBar), Time.OneDay, false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Hour, TickType.Trade, Time.OneDay, false)
                     .SetDescription("Invalid resolution - Hour resolution, 1 day period.")
                     .SetCategory("Invalid");
 
                 // Invalid period - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, typeof(TradeBar), TimeSpan.FromDays(45), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), false)
                     .SetDescription("Invalid period - Beyond 30 days, Minute resolution.")
                     .SetCategory("Invalid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(-15), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily,TickType.Trade, TimeSpan.FromDays(-15), false)
                     .SetDescription("Invalid period - Date in the future, Daily resolution.")
                     .SetCategory("Invalid");
 
                 // Invalid data type - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, typeof(QuoteBar), TimeSpan.FromDays(15), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Quote, TimeSpan.FromDays(15), false)
                     .SetDescription("Invalid data type - Daily resolution, QuoteBar data type.")
                     .SetCategory("Invalid");
 
                 // Invalid security type, no exception, empty result
-                yield return new TestCaseData(Symbols.EURUSD, Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15), false)
+                yield return new TestCaseData(Symbols.EURUSD, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15), false)
                     .SetDescription("Invalid security type - EURUSD symbol, Daily resolution.")
                     .SetCategory("Invalid");
             }
         }
 
         [Test, TestCaseSource(nameof(TestParameters))]
-        public void IEXCouldGetHistory(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period, bool received)
+        public void IEXCouldGetHistory(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period, bool received)
         {
-            var slices = GetHistory(symbol, resolution, dataType, period);
+            var slices = GetHistory(symbol, resolution, tickType, period);
 
             if (!received)
             {
@@ -400,21 +408,30 @@ namespace QuantConnect.IEX.Tests
             {
                 foreach (var data in slice)
                 {
-                    Assert.That(data.Key, Is.EqualTo(symbol));
-                    Assert.That(data.Value.DataType, Is.EqualTo(MarketDataType.TradeBar));
-
-                    var tradeBar = data.Value as TradeBar;
-                    Assert.IsNotNull(tradeBar);
-                    Assert.Greater(tradeBar.Open, 0);
-                    Assert.Greater(tradeBar.High, 0);
-                    Assert.Greater(tradeBar.Close, 0);
-                    Assert.Greater(tradeBar.Low, 0);
-                    Assert.That(tradeBar.Period.ToHigherResolutionEquivalent(true), Is.EqualTo(resolution));
+                    AssertTradeBar(symbol, resolution, data.Value, data.Key);
                 }
             }
 
             // And are ordered by time
             Assert.That(slices, Is.Ordered.By("Time"));
+        }
+
+        internal static void AssertTradeBar(Symbol expectedSymbol, Resolution resolution, BaseData baseData, Symbol actualSymbol = null)
+        {
+            if (actualSymbol != null)
+            {
+                Assert.That(actualSymbol, Is.EqualTo(expectedSymbol));
+            }
+
+            Assert.That(baseData.DataType, Is.EqualTo(MarketDataType.TradeBar));
+
+            var tradeBar = baseData as TradeBar;
+            Assert.IsNotNull(tradeBar);
+            Assert.Greater(tradeBar.Open, 0);
+            Assert.Greater(tradeBar.High, 0);
+            Assert.Greater(tradeBar.Close, 0);
+            Assert.Greater(tradeBar.Low, 0);
+            Assert.That(tradeBar.Period.ToHigherResolutionEquivalent(true), Is.EqualTo(resolution));
         }
 
         /// <summary>
@@ -427,26 +444,35 @@ namespace QuantConnect.IEX.Tests
         {
             get
             {
-                yield return new TestCaseData(Symbol.Create("XYZ", SecurityType.Equity, Market.FXCM), Resolution.Daily, typeof(TradeBar), TimeSpan.FromDays(15))
+                yield return new TestCaseData(Symbol.Create("XYZ", SecurityType.Equity, Market.FXCM), Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15))
                     .SetDescription("Invalid symbol - Attempt to create a symbol with an invalid combination of SecurityType and Market.")
                     .SetCategory("Invalid");
             }
         }
 
         [Test, TestCaseSource(nameof(InvalidSymbolTestCaseData))]
-        public void GetHistoryInvalidSymbolThrowException(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period)
+        public void GetHistoryInvalidSymbolThrowException(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            Assert.Throws<Exception>(() => GetHistory(symbol, resolution, dataType, period));
+            Assert.Throws<Exception>(() => GetHistory(symbol, resolution, tickType, period));
         }
 
-        private static Slice[] GetHistory(Symbol symbol, Resolution resolution, Type dataType, TimeSpan period)
+        private Slice[] GetHistory(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            var historyProvider = new IEXDataQueueHandler();
+            var requests = new[] { CreateHistoryRequest(symbol, resolution, tickType, period) };
+
+            var slices = iexDataQueueHandler.GetHistory(requests, TimeZones.Utc).ToArray();
+            Log.Trace("Data points retrieved: " + iexDataQueueHandler.DataPointCount);
+            Log.Trace("tick Type: " + tickType);
+            return slices;
+        }
+
+        internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
+        {
             var now = DateTime.UtcNow;
 
-            var requests = new[]
-            {
-                    new HistoryRequest(now.Add(-period),
+            var dataType = LeanData.GetDataType(resolution, tickType);
+
+            return new HistoryRequest(now.Add(-period),
                                        now,
                                        dataType,
                                        symbol,
@@ -457,12 +483,7 @@ namespace QuantConnect.IEX.Tests
                                        true,
                                        false,
                                        DataNormalizationMode.Raw,
-                                       TickType.Trade)
-                };
-
-            var slices = historyProvider.GetHistory(requests, TimeZones.Utc).ToArray();
-            Log.Trace("Data points retrieved: " + historyProvider.DataPointCount);
-            return slices;
+                                       tickType);
         }
 
         #endregion
