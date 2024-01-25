@@ -342,11 +342,14 @@ namespace QuantConnect.IEX
             foreach (var request in requests)
             {
                 // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
-                if (request.DataType != typeof(TradeBar) && !_invalidHistDataTypeWarningFired)
+                if (request.TickType != TickType.Trade)
                 {
-                    Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
-                        "Currently available support only for historical of type - TradeBar");
-                    _invalidHistDataTypeWarningFired = true;
+                    if(!_invalidHistDataTypeWarningFired)
+                    {
+                        Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
+                            "Currently available support only for historical of type - TradeBar");
+                        _invalidHistDataTypeWarningFired = true;
+                    }
                     return Enumerable.Empty<Slice>();
                 }
 
