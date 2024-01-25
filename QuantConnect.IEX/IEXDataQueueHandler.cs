@@ -72,39 +72,15 @@ namespace QuantConnect.IEX
         /// </summary>
         public IEXDataQueueHandler()
         {
-            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-
-            _subscriptionManager.SubscribeImpl += (symbols, t) =>
-            {
-                symbols.DoForEach(symbol =>
-                {
-                    if (!_symbols.TryAdd(symbol.Value, symbol))
-                    {
-                        throw new InvalidOperationException($"Invalid logic, SubscriptionManager tried to subscribe to existing symbol : {symbol.Value}");
-                    }
-                });
-
-                Refresh();
-                return true;
-            };
-
-            _subscriptionManager.UnsubscribeImpl += (symbols, t) =>
-            {
-                symbols.DoForEach(symbol =>
-                {
-                    Symbol tmp;
-                    _symbols.TryRemove(symbol.Value, out tmp);
-                });
-
-                Refresh();
-                return true;
-            };
-
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
-                throw new ArgumentException("Could not read IEX API key from config.json. " +
-                    "Please make sure to add \"iex-cloud-api-key\" to your configuration file");
+                throw new ArgumentException("Invalid or missing IEX API key. Please ensure that the API key is set and not empty.");
             }
+
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+
+            _subscriptionManager.SubscribeImpl += Subscribe;
+            _subscriptionManager.UnsubscribeImpl += Unsubscribe;
 
             // Set the sse-clients collection
             _clients = new IEXEventSourceCollection(((o, args) =>
@@ -139,6 +115,31 @@ namespace QuantConnect.IEX
             })
             { IsBackground = true };
             clientUpdateThread.Start();
+        }
+
+        private bool Subscribe(IEnumerable<Symbol> symbols, TickType _)
+        {
+            foreach (var symbol in symbols)
+            {
+                if (!_symbols.TryAdd(symbol.Value, symbol))
+                {
+                    throw new InvalidOperationException($"Invalid logic, SubscriptionManager tried to subscribe to existing symbol : {symbol.Value}");
+                }
+            }
+
+            Refresh();
+            return true;
+        }
+
+        private bool Unsubscribe(IEnumerable<Symbol> symbols, TickType _)
+        {
+            foreach (var symbol in symbols)
+            {
+                _symbols.TryRemove(symbol.Value, out var _);
+            }
+
+            Refresh();
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
