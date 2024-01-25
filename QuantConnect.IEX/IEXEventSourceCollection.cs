@@ -147,22 +147,16 @@ namespace QuantConnect.IEX
 
                 Counter.Signal();   // Decrement
 
-                Log.Debug($"ClientOnOpened(): Counter count after decrement: {Counter.CurrentCount}");
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Opened: Counter count after decrement: {Counter.CurrentCount}");
             };
 
             client.MessageReceived += _messageAction;
 
-            client.Error += (sender, args) =>
-            {
-                var exception = args.Exception;
-                Log.Debug($"ClientOnError(): EventSource Error Occurred. Details: {exception.Message} " +
-                          $"ErrorType: {exception.GetType().FullName}");
-            };
+            client.Error += (_, exceptionEventArgs) =>
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
 
-            client.Closed += (sender, args) =>
-            {
-                Log.Debug("ClientOnClosed(): Closing a client");
-            };
+            client.Closed += (_, __) =>
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Closed: The event source client has been closed. Initiating cleanup and closing procedures.");
 
             // Client start call will block until Stop() is called (!) - runs continuously in a background
             Task.Run(async () => await client.StartAsync().ConfigureAwait(false));
@@ -172,7 +166,10 @@ namespace QuantConnect.IEX
 
         protected EventSource CreateNewClient(string[] symbols)
         {
-            var url = BuildUrlString(symbols);
+            var url = $"https://cloud-sse.iexapis.com/v1/stocksUSNoUTP1Second?token={_apiKey}&symbols={string.Join(",", symbols)}";
+
+            Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewClient)}: client built subscription URL: '{url}'");
+
             var client = new EventSource(LaunchDarkly.EventSource.Configuration.Builder(new Uri(url)).Build());
             return client;
         }
@@ -185,13 +182,6 @@ namespace QuantConnect.IEX
             ClientSymbolsDictionary.TryRemove(client, out stub);
 
             client.DisposeSafely();
-        }
-
-        private string BuildUrlString(IEnumerable<string> symbols)
-        {
-            var url = "https://cloud-sse.iexapis.com/stable/stocksUSNoUTP1Second?token=" + _apiKey;
-            url += "&symbols=" + string.Join(",", symbols);
-            return url;
         }
 
         public void Dispose()
