@@ -152,6 +152,7 @@ namespace QuantConnect.IEX
 
             client.MessageReceived += _messageAction;
 
+            // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
 
