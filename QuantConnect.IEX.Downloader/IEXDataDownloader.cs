@@ -14,6 +14,7 @@
 */
 
 using QuantConnect.Data;
+using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 
@@ -51,11 +52,17 @@ namespace QuantConnect.IEX.Downloader
                 yield break;
             }
 
-            if (!(resolution == Resolution.Daily || resolution == Resolution.Minute))
-                throw new NotSupportedException("Resolution not available: " + resolution);
+            if (resolution != Resolution.Daily && resolution != Resolution.Minute) 
+            {
+                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}: InvalidResolution. {resolution} resolution not supported, no history returned");
+                yield break;
+            }
 
             if (endUtc < startUtc)
-                throw new ArgumentException("The end date must be greater or equal than the start date.");
+            {
+                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}:InvalidDateRange. The history request start date must precede the end date, no history returned");
+                yield break;
+            }
 
             var historyRequests = new[] {
                 new HistoryRequest(startUtc,
