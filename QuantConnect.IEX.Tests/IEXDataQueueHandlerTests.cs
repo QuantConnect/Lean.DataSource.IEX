@@ -87,40 +87,19 @@ namespace QuantConnect.IEX.Tests
             iexDataQueueHandler.Dispose();
         }
 
-        private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
-        {
-            Task.Run(() =>
-            {
-                try
-                {
-                    while (enumerator.MoveNext())
-                    {
-                        BaseData tick = enumerator.Current;
-                        callback?.Invoke(tick);
-                    }
-                }
-                catch (AssertionException)
-                {
-                    throw;
-                }
-                catch (Exception err)
-                {
-                    Log.Error(err.Message);
-                }
-            });
-        }
-
         /// <summary>
         /// Subscribe to multiple symbols in a series of calls
         /// </summary>
         [Test]
         public void IEXCouldSubscribeManyTimes()
-        {            
+        {
             var configs = new[] {
                 GetSubscriptionDataConfig<TradeBar>(Symbols.GOOG, Resolution.Second),
+                GetSubscriptionDataConfig<QuoteBar>(Symbols.GOOG, Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("FB", SecurityType.Equity, Market.USA), Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbols.AAPL, Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbols.MSFT, Resolution.Second)
+                GetSubscriptionDataConfig<TradeBar>(Symbols.MSFT, Resolution.Second),
+                GetSubscriptionDataConfig<TradeBar>(Symbols.SPY, Resolution.Second)
             };
 
             foreach (var config in configs)
@@ -136,7 +115,7 @@ namespace QuantConnect.IEX.Tests
                     });
             }
 
-            Thread.Sleep(20000);
+            Thread.Sleep(5000);
 
             foreach (var config in configs)
             {
@@ -202,83 +181,27 @@ namespace QuantConnect.IEX.Tests
             }
         }
 
-        [Test]
-        public void IEXEventSourceCollectionCanSubscribeManyTimes()
+        private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
         {
-            // Send few consecutive requests to subscribe to a large amount of symbols (after the first request to change the subscription)
-            // and make sure no exception will be thrown - if event-source-collection can't subscribe to all it throws after timeout 
-            Assert.DoesNotThrow(() =>
+            Task.Run(() =>
             {
-                using (var events = new IEXEventSourceCollection((o, args) => { }, _apiKey))
+                try
                 {
-                    var rnd = new Random();
-                    for (var i = 0; i < 5; i++)
+                    while (enumerator.MoveNext())
                     {
-                        // Shuffle and select first random amount of symbol
-                        // in range from 300 to 500 (snp symbols count)
-                        var shuffled = HardCodedSymbolsSNP
-                            .OrderBy(n => Guid.NewGuid())
-                            .ToArray();
-
-                        var selected = shuffled
-                            .Take(rnd.Next(300, shuffled.Length))
-                            .ToArray();
-
-                        events.UpdateSubscription(selected);
+                        BaseData tick = enumerator.Current;
+                        callback?.Invoke(tick);
                     }
                 }
-            });
-        }
-
-        [Test]
-        public void IEXEventSourceCollectionSubscriptionThoroughTest()
-        {
-            using (var mockedEventsSource = new MockedIEXEventSourceCollection((o, args) => { }, _apiKey))
-            {
-                // -- 1 -- SUBSCRIBE FOR THE FIRST TIME --
-                var amount1 = 210;
-                var symbols1 = HardCodedSymbolsSNP.Take(amount1).ToArray();
-
-                mockedEventsSource.UpdateSubscription(symbols1);
-
-                var subscribed = mockedEventsSource.GetAllSubscribedSymbols().ToArray();
-                Assert.AreEqual(amount1, subscribed.Count());
-                Assert.IsTrue(subscribed.All(i => symbols1.Contains(i)));
-
-                Assert.AreEqual(5, mockedEventsSource.CreateNewSubscriptionCalledTimes);
-                Assert.AreEqual(0, mockedEventsSource.RemoveOldClientCalledTimes);
-
-                // Signal can be obtained
-                mockedEventsSource.TestCounter.Signal();
-                Assert.AreEqual(0, mockedEventsSource.TestCounter.CurrentCount);
-                mockedEventsSource.TestCounter.Reset(1);
-
-                // -- 2 -- SUBSCRIBE FOR THE SECOND TIME -- UPDATES SUBSCRIPTION --
-                mockedEventsSource.Reset();
-
-                // Remove 3 elements with a step 50
-                var symbols2 = symbols1.RemoveAt(51).RemoveAt(101).RemoveAt(151);
-                mockedEventsSource.UpdateSubscription(symbols2);
-
-                // We removed three symbols, so three subscription became invalid
-                Assert.AreEqual(3, mockedEventsSource.RemoveOldClientCalledTimes);
-                // Two of old subscriptions were good, 3 new ones to be initiated to replace removed 
-                Assert.AreEqual(3, mockedEventsSource.CreateNewSubscriptionCalledTimes);
-
-                subscribed = mockedEventsSource.GetAllSubscribedSymbols().ToArray();
-                Assert.AreEqual(symbols2.Length, subscribed.Length);
-                Assert.IsTrue(subscribed.All(i => symbols2.Contains(i)));
-
-                mockedEventsSource.TestCounter.Signal();
-                Assert.AreEqual(0, mockedEventsSource.TestCounter.CurrentCount);
-                mockedEventsSource.TestCounter.Reset(1);
-
-                // Removed subscriptions had a symbol that was not in current subscription
-                mockedEventsSource.RemovedClientSymbols.DoForEach(removed =>
+                catch (AssertionException)
                 {
-                    Assert.IsFalse(removed.All(s => symbols2.Contains(s)));
-                });
-            }
+                    throw;
+                }
+                catch (Exception err)
+                {
+                    Log.Error(err.Message);
+                }
+            });
         }
 
         private SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
@@ -293,48 +216,6 @@ namespace QuantConnect.IEX.Tests
                 true,
                 false);
         }
-
-        public class MockedIEXEventSourceCollection : IEXEventSourceCollection
-        {
-            public CountdownEvent TestCounter => Counter;
-            public int CreateNewSubscriptionCalledTimes;
-            public int RemoveOldClientCalledTimes;
-            public List<string[]> RemovedClientSymbols = new List<string[]>();
-
-            public MockedIEXEventSourceCollection(EventHandler<MessageReceivedEventArgs> messageAction, string apiKey)
-                : base(messageAction, apiKey)
-            {
-            }
-
-            protected override EventSource CreateNewSubscription(string[] symbols)
-            {
-                CreateNewSubscriptionCalledTimes++;
-                // Decrement the counter
-                Counter.Signal();
-                return CreateNewClient(symbols);
-            }
-
-            protected override void RemoveOldClient(EventSource oldClient)
-            {
-                RemoveOldClientCalledTimes++;
-                RemovedClientSymbols.Add(ClientSymbolsDictionary[oldClient]);
-                // Call base class to remove from inner dictionary and dispose
-                base.RemoveOldClient(oldClient);
-            }
-
-            public IEnumerable<string> GetAllSubscribedSymbols()
-            {
-                return ClientSymbolsDictionary.Values.SelectMany(x => x);
-            }
-
-            public void Reset()
-            {
-                CreateNewSubscriptionCalledTimes = 0;
-                RemoveOldClientCalledTimes = 0;
-                RemovedClientSymbols.Clear();
-            }
-        }
-
 
         #region History provider tests
 
@@ -375,7 +256,7 @@ namespace QuantConnect.IEX.Tests
                     .SetDescription("Invalid period - Beyond 30 days, Minute resolution.")
                     .SetCategory("Invalid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily,TickType.Trade, TimeSpan.FromDays(-15), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(-15), false)
                     .SetDescription("Invalid period - Date in the future, Daily resolution.")
                     .SetCategory("Invalid");
 

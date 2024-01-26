@@ -27,6 +27,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using QuantConnect.IEX.Response;
 using QuantConnect.Configuration;
+using QuantConnect.IEX.Constants;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using QuantConnect.Lean.Engine.DataFeeds;
@@ -45,9 +46,11 @@ namespace QuantConnect.IEX
         private static readonly TimeSpan SubscribeDelay = TimeSpan.FromMilliseconds(1500);
         private static bool _invalidHistDataTypeWarningFired;
 
-        private readonly IEXEventSourceCollection _clients;
+        private readonly List<IEXEventSourceCollection> _clients = new();
         private readonly ManualResetEvent _refreshEvent = new ManualResetEvent(false);
         private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+
+        private object _lock = new object();
 
         /// <summary>
         /// Client instance to translate RestRequests into Http requests and process response result
@@ -64,7 +67,7 @@ namespace QuantConnect.IEX
             Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"));
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
-        public bool IsConnected => _clients.IsConnected;
+        public bool IsConnected => _clients.All(client => client.IsConnected);
 
 
         /// <summary>
@@ -83,12 +86,14 @@ namespace QuantConnect.IEX
             _subscriptionManager.UnsubscribeImpl += Unsubscribe;
 
             // Set the sse-clients collection
-            _clients = new IEXEventSourceCollection(((o, args) =>
-            {
-                var message = args.Message.Data;
-                ProcessJsonObject(message);
 
-            }), _apiKey);
+            foreach (var channelName in IEXDataStreamChannels.Subscribtions)
+            {
+                _clients.Add(new IEXEventSourceCollection(
+                    (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
+                    _apiKey,
+                    channelName));
+            }
 
             // In this thread, we check at each interval whether the client needs to be updated
             // Subscription renewal requests may come in dozens and all at relatively same time - we cannot update them one by one when work with SSE
@@ -103,7 +108,10 @@ namespace QuantConnect.IEX
 
                     try
                     {
-                        _clients.UpdateSubscription(_symbols.Keys.ToArray());
+                        foreach (var client in _clients)
+                        {
+                            client.UpdateSubscription(_symbols.Keys.ToArray());
+                        }
                     }
                     catch (Exception e)
                     {
@@ -143,80 +151,89 @@ namespace QuantConnect.IEX
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ProcessJsonObject(string json)
+        private void ProcessJsonObject(string json, string channelName)
         {
-            try
+            // Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessJsonObject)}: Channel:{channelName}, Data:{json}");
+
+            if (json == "[]")
             {
-                var dataList = JsonConvert.DeserializeObject<List<StreamResponseStocksUS>>(json);
+                return;
+            }
 
-                foreach (var item in dataList)
+            switch (channelName)
+            {
+                case IEXDataStreamChannels.LastSale:
+                    HandleLastSaleResponse(JsonConvert.DeserializeObject<IEnumerable<DataStreamLastSale>>(json));
+                    break;
+                case IEXDataStreamChannels.TopOfBook:
+                    HandleTopOfBookResponse(JsonConvert.DeserializeObject<IEnumerable<DataStreamTopOfBook>>(json));
+                    break;
+            }
+        }
+
+        private void HandleTopOfBookResponse(IEnumerable<DataStreamTopOfBook>? topOfBooks)
+        {
+            if (topOfBooks == null || !topOfBooks.Any())
+            {
+                return;
+            }
+
+            foreach (var topOfBook in topOfBooks)
+            {
+                if (!_symbols.TryGetValue(topOfBook.Symbol, out var symbol))
                 {
-                    var symbolString = item.Symbol;
-                    Symbol symbol;
-                    if (!_symbols.TryGetValue(symbolString, out symbol))
-                    {
-                        // Symbol is no loner in dictionary, it may be the stream not has been updated yet,
-                        // and the old client is still sending messages for unsubscribed symbols -
-                        // so there can be residual messages for the symbol, which we must skip
-                        continue;
-                    }
+                    // Symbol is no loner in dictionary, it may be the stream not has been updated yet,
+                    // and the old client is still sending messages for unsubscribed symbols -
+                    // so there can be residual messages for the symbol, which we must skip
+                    continue;
+                }
 
-                    var lastPrice = item.IexRealtimePrice ?? 0;
-                    var lastSize = item.IexRealtimeSize ?? 0;
+                // -1 if IEX has not quoted the symbol in the trading day
+                if (topOfBook.LastUpdated <= 0)
+                {
+                    continue;
+                }
 
-                    // Refers to the last update time of iexRealtimePrice in milliseconds since midnight Jan 1, 1970 UTC or -1 or 0.
-                    // If the value is -1 or 0, IEX has not quoted the symbol in the trading day.
-                    var lastUpdateMillis = item.IexLastUpdated ?? 0;
+                var time = Time.UnixMillisecondTimeStampToDateTime(topOfBook.LastUpdated).ConvertFromUtc(TimeZones.NewYork);
 
-                    if (lastUpdateMillis <= 0)
-                    {
-                        continue;
-                    }
+                var quoteTick = new Tick(
+                    time,
+                    symbol, saleCondition: string.Empty, symbol.ID.Market, topOfBook.BidSize, topOfBook.BidPrice, topOfBook.AskSize, topOfBook.AskPrice);
 
-                    // (!) Epoch timestamp in milliseconds of the last market hours trade excluding the closing auction trade.
-                    var lastTradeMillis = item.LastTradeTime ?? 0;
+                lock (_lock)
+                {
+                    Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(HandleTopOfBookResponse)}: in lock timeUpdate:{time}");
 
-                    if (lastTradeMillis <= 0)
-                    {
-                        continue;
-                    }
-
-                    // If there is a last trade time but no last price or size - this is an error
-                    if (lastPrice == 0 || lastSize == 0)
-                    {
-                        throw new InvalidOperationException("ProcessJsonObject(): Invalid price & size.");
-                    }
-
-                    // Check if there is a kvp entry for a symbol
-                    long value;
-                    var isInDictionary = _iexLastTradeTime.TryGetValue(symbolString, out value);
-
-                    // We should update with trade-tick if:
-                    // - there exist an entry for a symbol and new trade time is different from time in dictionary
-                    // - not in dictionary, means the first trade-tick case
-                    if (isInDictionary && value != lastTradeMillis || !isInDictionary)
-                    {
-                        var lastTradeDateTime = UnixEpoch.AddMilliseconds(lastTradeMillis);
-                        var lastTradeTimeNewYork = lastTradeDateTime.ConvertFromUtc(TimeZones.NewYork);
-
-                        var tradeTick = new Tick()
-                        {
-                            Symbol = symbol,
-                            Time = lastTradeTimeNewYork,
-                            TickType = TickType.Trade,
-                            Value = lastPrice,
-                            Quantity = lastSize
-                        };
-
-                        _aggregator.Update(tradeTick);
-
-                        _iexLastTradeTime[symbolString] = lastTradeMillis;
-                    }
+                    _aggregator.Update(quoteTick);
                 }
             }
-            catch (Exception err)
+        }
+
+        private void HandleLastSaleResponse(IEnumerable<DataStreamLastSale>? lastSales)
+        {
+            if (lastSales == null || !lastSales.Any())
             {
-                Log.Error("IEXDataQueueHandler.ProcessJsonObject(): " + err.Message);
+                return;
+            }
+
+            foreach (var lastSale in lastSales)
+            {
+                if (!_symbols.TryGetValue(lastSale.Symbol, out var symbol))
+                {
+                    // Symbol is no loner in dictionary, it may be the stream not has been updated yet,
+                    // and the old client is still sending messages for unsubscribed symbols -
+                    // so there can be residual messages for the symbol, which we must skip
+                    continue;
+                }
+
+                var tradeTick = new Tick(
+                    Time.UnixMillisecondTimeStampToDateTime(lastSale.Time).ConvertFromUtc(TimeZones.NewYork),
+                    symbol, saleCondition: string.Empty, symbol.ID.Market, lastSale.Size, lastSale.Price);
+
+                lock (_lock)
+                {
+                    _aggregator.Update(tradeTick);
+                }
             }
         }
 
@@ -298,7 +315,10 @@ namespace QuantConnect.IEX
             _aggregator.DisposeSafely();
             _cts.Cancel();
 
-            _clients.Dispose();
+            foreach (var client in _clients)
+            {
+                client.UpdateSubscription(_symbols.Keys.ToArray());
+            }
 
             Log.Trace("IEXDataQueueHandler.Dispose(): Disconnected from IEX data provider");
         }
@@ -344,7 +364,7 @@ namespace QuantConnect.IEX
                 // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
                 if (request.TickType != TickType.Trade)
                 {
-                    if(!_invalidHistDataTypeWarningFired)
+                    if (!_invalidHistDataTypeWarningFired)
                     {
                         Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
                             "Currently available support only for historical of type - TradeBar");

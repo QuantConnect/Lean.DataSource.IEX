@@ -16,6 +16,7 @@
 using QuantConnect.Util;
 using QuantConnect.Logging;
 using LaunchDarkly.EventSource;
+using QuantConnect.IEX.Constants;
 using System.Collections.Concurrent;
 
 namespace QuantConnect.IEX
@@ -26,10 +27,25 @@ namespace QuantConnect.IEX
     /// </summary>
     public class IEXEventSourceCollection : IDisposable
     {
+        /// <summary>
+        /// Full url to subscription on event updates
+        /// </summary>
+        private readonly string dataStreamSubscriptionUrl;
+
+        /// <summary>
+        /// The specific channel name for current instance of <see cref="IEXEventSourceCollection"/>
+        /// </summary>
+        private readonly string dataStreamChannelName;
+
+        /// <summary>
+        /// Message Event Handler to return update externally
+        /// Depend from <see cref="dataStreamChannelName"/> to easy handle different event updates.
+        /// </summary>
+        private readonly EventHandler<(MessageReceivedEventArgs message, string channelName)> _messageAction;
+
         private static readonly TimeSpan TimeoutToUpdate = TimeSpan.FromSeconds(30);
         private const int SymbolsPerConnectionLimit = 50;
         private readonly string _apiKey;
-        private readonly EventHandler<MessageReceivedEventArgs> _messageAction;
         protected readonly ConcurrentDictionary<EventSource, string[]> ClientSymbolsDictionary = new ConcurrentDictionary<EventSource, string[]>();
         protected readonly CountdownEvent Counter = new CountdownEvent(1);
 
@@ -45,10 +61,15 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Creates a new instance of <see cref="IEXEventSourceCollection"/>
         /// </summary>
-        public IEXEventSourceCollection(EventHandler<MessageReceivedEventArgs> messageAction, string apiKey)
+        /// <param name="messageAction">Message Event handler by channel name.</param>
+        /// <param name="apiKey">The Api-key of IEX cloud platform</param>
+        /// <param name="subscriptionChannelName">The name of channel to subscription in current instance of <see cref="IEXEventSourceCollection"/></param>
+        public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName)
         {
             _messageAction = messageAction;
             _apiKey = apiKey;
+            dataStreamChannelName = subscriptionChannelName;
+            dataStreamSubscriptionUrl = IEXDataStreamChannels.BaseDataStreamUrl + subscriptionChannelName;
         }
 
         /// <summary>
@@ -150,7 +171,7 @@ namespace QuantConnect.IEX
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Opened: Counter count after decrement: {Counter.CurrentCount}");
             };
 
-            client.MessageReceived += _messageAction;
+            client.MessageReceived += (sender, args) => _messageAction(sender, (args, dataStreamChannelName));
 
             // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
@@ -167,7 +188,7 @@ namespace QuantConnect.IEX
 
         protected EventSource CreateNewClient(string[] symbols)
         {
-            var url = $"https://cloud-sse.iexapis.com/v1/stocksUSNoUTP1Second?token={_apiKey}&symbols={string.Join(",", symbols)}";
+            var url = $"{dataStreamSubscriptionUrl}?token={_apiKey}&symbols={string.Join(",", symbols)}";
 
             Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewClient)}: client built subscription URL: '{url}'");
 
