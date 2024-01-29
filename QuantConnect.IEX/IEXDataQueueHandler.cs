@@ -42,14 +42,30 @@ namespace QuantConnect.IEX
     /// </summary>
     public class IEXDataQueueHandler : SynchronizingHistoryProvider, IDataQueueHandler
     {
-        private static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified);
-        private static readonly TimeSpan SubscribeDelay = TimeSpan.FromMilliseconds(1500);
-        private static bool _invalidHistDataTypeWarningFired;
+        /// <summary>
+        /// Flag indicating whether a warning about unsupported data types in user history should be suppressed to prevent spam.
+        /// </summary>
+        private static bool _invalidHistoryDataTypeWarningFired;
 
-        private readonly List<IEXEventSourceCollection> _clients = new();
+        /// <summary>
+        /// Represents two clients: one for the trade channel and another for the top-of-book channel.
+        /// </summary>
+        /// <see cref="IEXDataStreamChannels"/>
+        private readonly List<IEXEventSourceCollection> _clients = new(2);
+
+        /// <summary>
+        /// Represents a reset event that facilitates updating user Subscriptions or UnSubscriptions on symbols.
+        /// </summary>
         private readonly ManualResetEvent _refreshEvent = new ManualResetEvent(false);
+
+        /// <summary>
+        /// Represents an API key that is read-only once assigned.
+        /// </summary>
         private readonly string _apiKey = Config.Get("iex-cloud-api-key");
 
+        /// <summary>
+        /// Object used as a synchronization lock for thread-safe operations.
+        /// </summary>
         private object _lock = new object();
 
         /// <summary>
@@ -60,7 +76,7 @@ namespace QuantConnect.IEX
         private readonly ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
         private readonly ConcurrentDictionary<string, long> _iexLastTradeTime = new ConcurrentDictionary<string, long>();
 
-        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private int _dataPointCount;
 
         private readonly IDataAggregator _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
@@ -68,7 +84,6 @@ namespace QuantConnect.IEX
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
         public bool IsConnected => _clients.All(client => client.IsConnected);
-
 
         /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
@@ -86,8 +101,7 @@ namespace QuantConnect.IEX
             _subscriptionManager.UnsubscribeImpl += Unsubscribe;
 
             // Set the sse-clients collection
-
-            foreach (var channelName in IEXDataStreamChannels.Subscribtions)
+            foreach (var channelName in IEXDataStreamChannels.Subscriptions)
             {
                 _clients.Add(new IEXEventSourceCollection(
                     (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
@@ -95,34 +109,36 @@ namespace QuantConnect.IEX
                     channelName));
             }
 
+            // Initiates the stream listener task.
+            StreamAction();
+        }
+
+        private void StreamAction()
+        {
             // In this thread, we check at each interval whether the client needs to be updated
             // Subscription renewal requests may come in dozens and all at relatively same time - we cannot update them one by one when work with SSE
-            var clientUpdateThread = new Thread(() =>
+            Task.Factory.StartNew(() =>
             {
-                while (!_cts.Token.IsCancellationRequested)
+                while (!_cancellationTokenSource.Token.IsCancellationRequested)
                 {
-                    _refreshEvent.WaitOne();
-                    Thread.Sleep(SubscribeDelay);
-
-                    _refreshEvent.Reset();
-
                     try
                     {
+                        _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
+
                         foreach (var client in _clients)
                         {
                             client.UpdateSubscription(_symbols.Keys.ToArray());
                         }
+
+                        _refreshEvent.Reset();
                     }
-                    catch (Exception e)
+                    catch (Exception ex)
                     {
-                        Log.Error(e);
-                        throw;
+                        throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: {ex}");
                     }
                 }
-
-            })
-            { IsBackground = true };
-            clientUpdateThread.Start();
+                Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: End");
+            }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private bool Subscribe(IEnumerable<Symbol> symbols, TickType _)
@@ -180,6 +196,11 @@ namespace QuantConnect.IEX
 
             foreach (var topOfBook in topOfBooks)
             {
+                if (topOfBook.AskPrice == 0 || topOfBook.BidPrice == 0)
+                {
+                    continue;
+                }
+
                 if (!_symbols.TryGetValue(topOfBook.Symbol, out var symbol))
                 {
                     // Symbol is no loner in dictionary, it may be the stream not has been updated yet,
@@ -306,26 +327,20 @@ namespace QuantConnect.IEX
         /// </summary>
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
             _aggregator.DisposeSafely();
-            _cts.Cancel();
+            _cancellationTokenSource.Cancel();
 
-            foreach (var client in _clients)
+            if (!_symbols.IsEmpty)
             {
-                client.UpdateSubscription(_symbols.Keys.ToArray());
+                foreach (var client in _clients)
+                {
+                    client.UpdateSubscription(_symbols.Keys.ToArray());
+                }
             }
 
             Log.Trace("IEXDataQueueHandler.Dispose(): Disconnected from IEX data provider");
-        }
 
-        ~IEXDataQueueHandler()
-        {
-            Dispose(false);
+            GC.SuppressFinalize(this);
         }
 
         #region IHistoryProvider implementation
@@ -364,11 +379,11 @@ namespace QuantConnect.IEX
                 // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
                 if (request.TickType != TickType.Trade)
                 {
-                    if (!_invalidHistDataTypeWarningFired)
+                    if (!_invalidHistoryDataTypeWarningFired)
                     {
                         Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
                             "Currently available support only for historical of type - TradeBar");
-                        _invalidHistDataTypeWarningFired = true;
+                        _invalidHistoryDataTypeWarningFired = true;
                     }
                     return Enumerable.Empty<Slice>();
                 }

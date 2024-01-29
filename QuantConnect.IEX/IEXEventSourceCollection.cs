@@ -28,14 +28,14 @@ namespace QuantConnect.IEX
     public class IEXEventSourceCollection : IDisposable
     {
         /// <summary>
+        /// Maximum limit of available symbols allowed per connection.
+        /// </summary>
+        private const int MaximumSymbolsPerConnectionLimit = 50;
+
+        /// <summary>
         /// Full url to subscription on event updates
         /// </summary>
         private readonly string dataStreamSubscriptionUrl;
-
-        /// <summary>
-        /// The specific channel name for current instance of <see cref="IEXEventSourceCollection"/>
-        /// </summary>
-        private readonly string dataStreamChannelName;
 
         /// <summary>
         /// Message Event Handler to return update externally
@@ -43,20 +43,35 @@ namespace QuantConnect.IEX
         /// </summary>
         private readonly EventHandler<(MessageReceivedEventArgs message, string channelName)> _messageAction;
 
-        private static readonly TimeSpan TimeoutToUpdate = TimeSpan.FromSeconds(30);
-        private const int SymbolsPerConnectionLimit = 50;
+        /// <summary>
+        /// Represents an API key that is read-only once assigned.
+        /// </summary>
         private readonly string _apiKey;
-        protected readonly ConcurrentDictionary<EventSource, string[]> ClientSymbolsDictionary = new ConcurrentDictionary<EventSource, string[]>();
-        protected readonly CountdownEvent Counter = new CountdownEvent(1);
+
+        /// <summary>
+        /// Dictionary that associates EventSource instances with corresponding HashSet of ticker symbols, designed for concurrent access.
+        /// The value, represented by a HashSet of strings, contains unique ticker symbols associated with each EventSource.
+        /// The maximum limit of available ticker symbols per connection is determined by <see cref="MaximumSymbolsPerConnectionLimit"/>.
+        /// </summary>
+        protected readonly ConcurrentQueue<EventSource> EventSourceClients = new();
+
+        private HashSet<string> subscribeTickers = new();
+
+        private AutoResetEvent _autoResetEvent = new(false);
 
         // IEX API documentation says:
         // "We limit requests to 100 per second per IP measured in milliseconds, so no more than 1 request per 10 milliseconds."
-        private readonly RateGate _rateGate = new RateGate(1, TimeSpan.FromMilliseconds(10));
+        private readonly RateGate _rateGate = new RateGate(200, TimeSpan.FromSeconds(1));
 
         /// <summary>
         /// Indicates whether a client is connected - i.e delivers any data.
         /// </summary>
         public bool IsConnected { get; private set; }
+
+        /// <summary>
+        /// The specific channel name for current instance of <see cref="IEXEventSourceCollection"/>
+        /// </summary>
+        public readonly string dataStreamChannelName;
 
         /// <summary>
         /// Creates a new instance of <see cref="IEXEventSourceCollection"/>
@@ -75,88 +90,42 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Updates the data subscription to reflect the current user-subscribed symbols set.
         /// </summary>
-        /// <param name="symbols">Symbols that user is currently subscribed to</param>
+        /// <param name="newSymbols">Symbols that user is currently subscribed to</param>
         /// <returns></returns>
-        public void UpdateSubscription(string[] symbols)
+        public void UpdateSubscription(string[] newSymbols)
         {
-            Log.Debug("IEXEventSourceCollection.UpdateSubscription(): Subscription update started");
-
-            var remainingSymbols = new List<string>(symbols);
-            var clientsToRemove = new List<EventSource>();
-
-            foreach (var kvp in ClientSymbolsDictionary)
+            foreach (var symbol in newSymbols)
             {
-                var clientSymbols = kvp.Value;
-
-                // Need to perform no changes if all client symbols are relevant
-                // and subscription is fully loaded (otherwise it is also a replacement)
-                if (clientSymbols.All(symbols.Contains) && clientSymbols.Length == SymbolsPerConnectionLimit)
+                if (!subscribeTickers.Add(symbol))
                 {
-                    Log.Debug($"IEXEventSourceCollection.UpdateSubscription(): Leave unchanged subscription for: {string.Join(",", clientSymbols)}");
-
-                    // Just remove symbols from collection of remaining
-                    remainingSymbols.RemoveAll(i => clientSymbols.Contains(i));
-                    continue;
-                }
-
-                clientsToRemove.Add(kvp.Key);
-            }
-
-            Log.Debug($"IEXEventSourceCollection.UpdateSubscription(): {clientsToRemove.Count} old clients to remove");
-
-            if (!remainingSymbols.Any())
-            {
-                throw new Exception("IEXEventSourceCollection.UpdateSubscription(): Invalid logic, remaining symbols can't be an empty set.");
-            }
-
-            // Group all remaining symbols in a smaller packages to comply with per-connection-limits
-            var packagedSymbolsList = new List<string[]>();
-            do
-            {
-                if (remainingSymbols.Count > SymbolsPerConnectionLimit)
-                {
-                    var firstFifty = remainingSymbols.Take(SymbolsPerConnectionLimit).ToArray();
-                    remainingSymbols.RemoveAll(i => firstFifty.Contains(i));
-                    packagedSymbolsList.Add(firstFifty);
-                }
-                else
-                {
-                    // Add all remaining symbols as a last package
-                    packagedSymbolsList.Add(remainingSymbols.ToArray());
-                    break;
+                    subscribeTickers.Remove(symbol);
                 }
             }
-            while (remainingSymbols.Any());
+
+            // Remove and dispose old event source clients
+            RemoveOldClient(EventSourceClients);
 
             // Create new client for every package (make sure that we do not exceed the rate-gate-limit while creating)
-            packagedSymbolsList.DoForEach(package =>
+            foreach (var tickerChunk in subscribeTickers.Chunk(MaximumSymbolsPerConnectionLimit))
             {
-                Log.Debug($"IEXEventSourceCollection.CreateNewSubscription(): Creating new subscription for: {string.Join(",", package)}");
+                var client = CreateNewSubscription(tickerChunk);
 
-                var client = CreateNewSubscription(package);
+                if (!_autoResetEvent.WaitOne(TimeSpan.FromSeconds(30)))
+                {
+                    throw new TimeoutException($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}: Could not update subscription within a timeout");
+                }
 
-                // Add to the dictionary
-                ClientSymbolsDictionary.TryAdd(client, package);
-            });
-
-            Counter.Signal();
-            if (!Counter.Wait(TimeoutToUpdate))
-            {
-                throw new Exception("IEXEventSourceCollection.UpdateSubscription(): Could not update subscription within a timeout");
+                // Add to the queue
+                EventSourceClients.Enqueue(client);
             }
 
-            clientsToRemove.DoForEach(RemoveOldClient);
-
-            // Reset counter
-            Log.Debug($"IEXEventSourceCollection.CreateNewSubscription(): Updated successfully. Resetting the counter.");
-            Counter.Reset(1);
+            Log.Debug($"IEXEvent.UpdateSubscription: ConcurrentQueue: {EventSourceClients.Count}");
 
             IsConnected = true;
         }
 
-        protected virtual EventSource CreateNewSubscription(string[] symbols)
+        protected EventSource CreateNewSubscription(string[] symbols)
         {
-            Counter.AddCount();  // Increment
             _rateGate.WaitToProceed();
 
             var client = CreateNewClient(symbols);
@@ -164,11 +133,8 @@ namespace QuantConnect.IEX
             // Set up the handlers
             client.Opened += (sender, args) =>
             {
-                Log.Debug($"ClientOnOpened(): Sender's hashcode is {sender.GetHashCode()}");
-
-                Counter.Signal();   // Decrement
-
-                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Opened: Counter count after decrement: {Counter.CurrentCount}");
+                _autoResetEvent.Set();
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Opened: Subscription to '{dataStreamChannelName}' was successfully");
             };
 
             client.MessageReceived += (sender, args) => _messageAction(sender, (args, dataStreamChannelName));
@@ -181,7 +147,7 @@ namespace QuantConnect.IEX
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Closed: The event source client has been closed. Initiating cleanup and closing procedures.");
 
             // Client start call will block until Stop() is called (!) - runs continuously in a background
-            Task.Run(async () => await client.StartAsync().ConfigureAwait(false));
+            Task.Run(async () => await client.StartAsync());
 
             return client;
         }
@@ -196,24 +162,23 @@ namespace QuantConnect.IEX
             return client;
         }
 
-        protected virtual void RemoveOldClient(EventSource client)
+        private void RemoveOldClient(ConcurrentQueue<EventSource> eventSourceClients)
         {
-            Log.Debug($"IEXEventSourceCollection.UpdateSubscription(): Remove subscription for: {string.Join(",", ClientSymbolsDictionary[client])}");
-
-            string[] stub;
-            ClientSymbolsDictionary.TryRemove(client, out stub);
-
-            client.DisposeSafely();
+            Log.Debug($"IEXEvent.RemoveOldClient: ConcurrentQueue Before: {eventSourceClients.Count}");
+            while (eventSourceClients.Count > 0)
+            {
+                if (eventSourceClients.TryDequeue(out var client))
+                {
+                    client.Close();
+                    client.DisposeSafely();
+                }
+            }
+            Log.Debug($"IEXEvent.RemoveOldClient: ConcurrentQueue After: {eventSourceClients.Count}");
         }
 
         public void Dispose()
         {
-            foreach (var client in ClientSymbolsDictionary.Keys)
-            {
-                client.Close();
-                client.DisposeSafely();
-            }
-
+            RemoveOldClient(EventSourceClients);
             IsConnected = false;
         }
     }

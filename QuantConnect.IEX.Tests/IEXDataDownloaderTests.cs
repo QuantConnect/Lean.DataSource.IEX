@@ -14,11 +14,9 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using Plotly.NET.TraceObjects;
-using QuantConnect.Data;
+using System.Collections.Generic;
 using QuantConnect.IEX.Downloader;
 
 namespace QuantConnect.IEX.Tests
@@ -33,12 +31,12 @@ namespace QuantConnect.IEX.Tests
             _downloader = new IEXDataDownloader();
         }
 
-        private static IEnumerable<TestCaseData> HistoricalDataTestCases => IEXDataQueueHandlerTests.TestParameters;
+        private static IEnumerable<TestCaseData> HistoricalDataTestCases => IEXDataHistoryTests.TestParameters;
 
         [TestCaseSource(nameof(HistoricalDataTestCases))]
         public void DownloadsHistoricalData(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period, bool isEmptyResult)
         {
-            var request = IEXDataQueueHandlerTests.CreateHistoryRequest(symbol, resolution, tickType, period);
+            var request = IEXDataHistoryTests.CreateHistoryRequest(symbol, resolution, tickType, period);
 
             var parameters = new DataDownloaderGetParameters(symbol, resolution, request.StartTimeUtc, request.EndTimeUtc, tickType);
 
@@ -54,7 +52,7 @@ namespace QuantConnect.IEX.Tests
 
             foreach (var baseData in downloadResponse)
             {
-                IEXDataQueueHandlerTests.AssertTradeBar(symbol, resolution, baseData);
+                IEXDataHistoryTests.AssertTradeBar(symbol, resolution, baseData);
             }
         }
     }

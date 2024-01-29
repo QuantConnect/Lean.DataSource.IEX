@@ -43,6 +43,6 @@ namespace QuantConnect.IEX.Constants
         /// <summary>
         /// Provides an array of constants for accessing IEX Cloud data streams related to last sale and top-of-book information.
         /// </summary>
-        public static readonly string[] Subscribtions = new string[2] { LastSale, TopOfBook };
+        public static readonly string[] Subscriptions = new string[2] { LastSale, TopOfBook };
     }
 }

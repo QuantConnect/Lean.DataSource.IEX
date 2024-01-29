@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,19 +14,14 @@
 */
 
 using System;
-using Accord.Math;
 using System.Linq;
 using NUnit.Framework;
 using System.Threading;
 using QuantConnect.Data;
-using QuantConnect.Util;
 using QuantConnect.Tests;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
-using QuantConnect.Securities;
 using QuantConnect.Data.Market;
-using LaunchDarkly.EventSource;
-using QuantConnect.Configuration;
 using System.Collections.Generic;
 
 namespace QuantConnect.IEX.Tests
@@ -36,8 +31,6 @@ namespace QuantConnect.IEX.Tests
     public class IEXDataQueueHandlerTests
     {
         private IEXDataQueueHandler iexDataQueueHandler;
-
-        private readonly string _apiKey = Config.Get("iex-cloud-api-key");
 
         private static readonly string[] HardCodedSymbolsSNP = {
             "AAPL", "MSFT", "AMZN", "FB", "GOOGL", "GOOG", "BRK.B", "JNJ", "PG", "NVDA", "V", "JPM", "HD", "UNH", "MA", "VZ",
@@ -93,14 +86,11 @@ namespace QuantConnect.IEX.Tests
         [Test]
         public void IEXCouldSubscribeManyTimes()
         {
-            var configs = new[] {
-                GetSubscriptionDataConfig<TradeBar>(Symbols.GOOG, Resolution.Second),
-                GetSubscriptionDataConfig<QuoteBar>(Symbols.GOOG, Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbol.Create("FB", SecurityType.Equity, Market.USA), Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbols.AAPL, Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbols.MSFT, Resolution.Second),
-                GetSubscriptionDataConfig<TradeBar>(Symbols.SPY, Resolution.Second)
-            };
+            var configs = new List<SubscriptionDataConfig>();
+            foreach (var symbol in new[] { Symbols.GOOG, Symbols.AAPL, Symbols.MSFT, Symbols.SPY, Symbol.Create("FB", SecurityType.Equity, Market.USA) })
+            {
+                configs.AddRange(GetSubscriptionDataConfigs(symbol, Resolution.Second));
+            }
 
             foreach (var config in configs)
             {
@@ -115,7 +105,7 @@ namespace QuantConnect.IEX.Tests
                     });
             }
 
-            Thread.Sleep(5000);
+            Thread.Sleep(20_000);
 
             foreach (var config in configs)
             {
@@ -169,16 +159,25 @@ namespace QuantConnect.IEX.Tests
         [Test]
         public void IEXCouldSubscribeMoreThan100Symbols()
         {
-            var configs = HardCodedSymbolsSNP.Select(s =>
-                GetSubscriptionDataConfig<TradeBar>(Symbol.Create(s, SecurityType.Equity, Market.USA),
-                    Resolution.Second)).ToArray();
-
-            using (var iex = new IEXDataQueueHandler())
+            foreach (var ticker in HardCodedSymbolsSNP.Take(100))
             {
-                Array.ForEach(configs, dataConfig => iex.Subscribe(dataConfig, (s, e) => { }));
-                Thread.Sleep(20000);
-                Assert.IsTrue(iex.IsConnected);
+                foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
+                {
+                    iexDataQueueHandler.Subscribe(config, (s, e) => { Log.Debug($"Subscribe.EventHandler: {e}"); });
+                    //ProcessFeed(
+                    //    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    //    tick =>
+                    //    {
+                    //        if (tick != null)
+                    //        {
+                    //            Log.Trace(tick.ToString());
+                    //        }
+                    //    });
+                }
             }
+
+            Thread.Sleep(20_000);
+            Assert.IsTrue(iexDataQueueHandler.IsConnected);
         }
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
@@ -191,6 +190,8 @@ namespace QuantConnect.IEX.Tests
                     {
                         BaseData tick = enumerator.Current;
                         callback?.Invoke(tick);
+
+                        Thread.Sleep(200);
                     }
                 }
                 catch (AssertionException)
@@ -202,6 +203,20 @@ namespace QuantConnect.IEX.Tests
                     Log.Error(err.Message);
                 }
             });
+        }
+
+        private IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
+        {
+            var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+            foreach (var subscription in GetSubscriptionDataConfigs(symbol, resolution))
+            {
+                yield return subscription;
+            }
+        }
+        private IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(Symbol symbol, Resolution resolution)
+        {
+            yield return GetSubscriptionDataConfig<TradeBar>(symbol, resolution);
+            yield return GetSubscriptionDataConfig<QuoteBar>(symbol, resolution);
         }
 
         private SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
