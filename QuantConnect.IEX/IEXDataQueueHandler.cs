@@ -58,11 +58,6 @@ namespace QuantConnect.IEX
         private readonly List<IEXEventSourceCollection> _clients = new(2);
 
         /// <summary>
-        /// Represents a reset event that facilitates updating user Subscriptions or UnSubscriptions on symbols.
-        /// </summary>
-        private readonly ManualResetEvent _refreshEvent = new ManualResetEvent(false);
-
-        /// <summary>
         /// Represents an API key that is read-only once assigned.
         /// </summary>
         private readonly string _apiKey = Config.Get("iex-cloud-api-key");
@@ -73,20 +68,35 @@ namespace QuantConnect.IEX
         private object _lock = new object();
 
         /// <summary>
-        /// Client instance to translate RestRequests into Http requests and process response result
+        /// Client instance to translate RestRequests into Http requests and process response result.
         /// </summary>
         private readonly RestClient _restClient = new();
 
+        /// <summary>
+        /// Represents a concurrent dictionary that stores <see cref="Symbol"/> with unique ticker keys.
+        /// </summary>
         private readonly ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
-        private readonly ConcurrentDictionary<string, long> _iexLastTradeTime = new ConcurrentDictionary<string, long>();
 
-        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+        /// <summary>
+        /// Gets the total number of data points emitted by this history provider.
+        /// </summary>
         private int _dataPointCount;
 
+        /// <summary>
+        /// Aggregates ticks and bars based on given subscriptions.
+        /// </summary>
         private readonly IDataAggregator _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
             Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"));
+
+        /// <summary>
+        /// Handle subscription/unSubscription processes 
+        /// </summary>
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
+        /// <summary>
+        /// Returns whether the data provider is connected
+        /// True if the data provider is connected
+        /// </summary>
         public bool IsConnected => _clients.All(client => client.IsConnected);
 
         /// <summary>
@@ -293,11 +303,6 @@ namespace QuantConnect.IEX
             return symbol.SecurityType == SecurityType.Equity;
         }
 
-        private void Refresh()
-        {
-            _refreshEvent.Set();
-        }
-
         /// <summary>
         /// Removes the specified configuration
         /// </summary>
@@ -314,7 +319,6 @@ namespace QuantConnect.IEX
         public void Dispose()
         {
             _aggregator.DisposeSafely();
-            _cancellationTokenSource.Cancel();
 
             if (!_symbols.IsEmpty)
             {

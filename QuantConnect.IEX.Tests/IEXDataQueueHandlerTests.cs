@@ -29,7 +29,6 @@ using System.Collections.Concurrent;
 namespace QuantConnect.IEX.Tests
 {
     [TestFixture]
-    [Explicit("Tests are dependent on network and are long")]
     public class IEXDataQueueHandlerTests
     {
         private IEXDataQueueHandler iexDataQueueHandler;
@@ -244,7 +243,7 @@ namespace QuantConnect.IEX.Tests
             });
 
             Thread.Sleep(20000);
-
+            
             iexDataQueueHandler.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
 
             Log.Trace("Unsubscribing");
@@ -255,27 +254,37 @@ namespace QuantConnect.IEX.Tests
             Thread.Sleep(20000);
         }
 
-        [Test]
+        [Test, Explicit("Tests are dependent on network and are long")]
         public void IEXCouldSubscribeMoreThan100Symbols()
         {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var resetEvent = new AutoResetEvent(false);
+
+            var responseDataCounter = 0;
             foreach (var ticker in HardCodedSymbolsSNP.Take(100))
             {
                 foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
                 {
-                    iexDataQueueHandler.Subscribe(config, (s, e) => { Log.Debug($"Subscribe.EventHandler: {e}"); });
-                    //ProcessFeed(
-                    //    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
-                    //    tick =>
-                    //    {
-                    //        if (tick != null)
-                    //        {
-                    //            Log.Trace(tick.ToString());
-                    //        }
-                    //    });
+                    iexDataQueueHandler.Subscribe(config, (s, e) => { });
+                    ProcessFeed(
+                        iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                        tick =>
+                        {
+                            if (tick != null)
+                            {
+                                Log.Trace($"Response: {tick}");
+                                responseDataCounter++;
+                            }
+
+                            if (responseDataCounter > 100)
+                            {
+                                resetEvent.Set();
+                            }
+                        });
                 }
             }
 
-            Thread.Sleep(-1);
+            resetEvent.WaitOne(TimeSpan.FromMinutes(2), cancellationTokenSource.Token);
             Assert.IsTrue(iexDataQueueHandler.IsConnected);
         }
 
