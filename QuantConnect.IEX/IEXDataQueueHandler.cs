@@ -108,61 +108,43 @@ namespace QuantConnect.IEX
                     _apiKey,
                     channelName));
             }
-
-            // Initiates the stream listener task.
-            StreamAction();
-        }
-
-        private void StreamAction()
-        {
-            // In this thread, we check at each interval whether the client needs to be updated
-            // Subscription renewal requests may come in dozens and all at relatively same time - we cannot update them one by one when work with SSE
-            Task.Factory.StartNew(() =>
-            {
-                while (!_cancellationTokenSource.Token.IsCancellationRequested)
-                {
-                    try
-                    {
-                        _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
-
-                        foreach (var client in _clients)
-                        {
-                            client.UpdateSubscription(_symbols.Keys.ToArray());
-                        }
-
-                        _refreshEvent.Reset();
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: {ex}");
-                    }
-                }
-                Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: End");
-            }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private bool Subscribe(IEnumerable<Symbol> symbols, TickType _)
         {
+            var tickers = new List<string>();
             foreach (var symbol in symbols)
             {
                 if (!_symbols.TryAdd(symbol.Value, symbol))
                 {
                     throw new InvalidOperationException($"Invalid logic, SubscriptionManager tried to subscribe to existing symbol : {symbol.Value}");
                 }
+
+                tickers.Add(symbol.Value);
             }
 
-            Refresh();
+            foreach (var client in _clients)
+            {
+                client.UpdateSubscription(tickers);
+            }
+
             return true;
         }
 
         private bool Unsubscribe(IEnumerable<Symbol> symbols, TickType _)
         {
+            var tickers = new List<string>();
             foreach (var symbol in symbols)
             {
                 _symbols.TryRemove(symbol.Value, out var _);
+                tickers.Add(symbol.Value);
             }
 
-            Refresh();
+            foreach (var client in _clients)
+            {
+                client.UpdateSubscription(tickers);
+            }
+
             return true;
         }
 
@@ -223,8 +205,6 @@ namespace QuantConnect.IEX
 
                 lock (_lock)
                 {
-                    Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(HandleTopOfBookResponse)}: in lock timeUpdate:{time}");
-
                     _aggregator.Update(quoteTick);
                 }
             }
@@ -334,7 +314,7 @@ namespace QuantConnect.IEX
             {
                 foreach (var client in _clients)
                 {
-                    client.UpdateSubscription(_symbols.Keys.ToArray());
+                    client.Dispose();
                 }
             }
 

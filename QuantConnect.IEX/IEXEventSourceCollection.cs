@@ -57,7 +57,10 @@ namespace QuantConnect.IEX
 
         private HashSet<string> subscribeTickers = new();
 
-        private AutoResetEvent _autoResetEvent = new(false);
+        /// <summary>
+        /// Represents an AutoResetEvent used for synchronizing the context, waiting for the client to be open and successfully subscribed.
+        /// </summary>
+        public AutoResetEvent _subscriptionSyncEvent = new(false);
 
         // IEX API documentation says:
         // "We limit requests to 100 per second per IP measured in milliseconds, so no more than 1 request per 10 milliseconds."
@@ -88,12 +91,13 @@ namespace QuantConnect.IEX
         }
 
         /// <summary>
-        /// Updates the data subscription to reflect the current user-subscribed symbols set.
+        /// Updates the data subscription to align with the current set of symbols to which the user is subscribed or unsubscribed.
         /// </summary>
-        /// <param name="newSymbols">Symbols that user is currently subscribed to</param>
-        /// <returns></returns>
-        public void UpdateSubscription(string[] newSymbols)
+        /// <param name="newSymbols">The symbols the user is currently subscribing to or unsubscribing from.</param>
+        /// <exception cref="TimeoutException">Thrown when the operation times out.</exception>
+        public void UpdateSubscription(IEnumerable<string> newSymbols)
         {
+            // Update collection
             foreach (var symbol in newSymbols)
             {
                 if (!subscribeTickers.Add(symbol))
@@ -110,7 +114,7 @@ namespace QuantConnect.IEX
             {
                 var client = CreateNewSubscription(tickerChunk);
 
-                if (!_autoResetEvent.WaitOne(TimeSpan.FromSeconds(30)))
+                if (!_subscriptionSyncEvent.WaitOne(TimeSpan.FromSeconds(30)))
                 {
                     throw new TimeoutException($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}: Could not update subscription within a timeout");
                 }
@@ -119,7 +123,7 @@ namespace QuantConnect.IEX
                 EventSourceClients.Enqueue(client);
             }
 
-            Log.Debug($"IEXEvent.UpdateSubscription: ConcurrentQueue: {EventSourceClients.Count}");
+            Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}.{dataStreamChannelName}: client amount = {EventSourceClients.Count}");
 
             IsConnected = true;
         }
@@ -133,7 +137,7 @@ namespace QuantConnect.IEX
             // Set up the handlers
             client.Opened += (sender, args) =>
             {
-                _autoResetEvent.Set();
+                _subscriptionSyncEvent.Set();
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Opened: Subscription to '{dataStreamChannelName}' was successfully");
             };
 
@@ -141,7 +145,7 @@ namespace QuantConnect.IEX
 
             // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
-                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
+                Log.Trace($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
 
             client.Closed += (_, __) =>
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Closed: The event source client has been closed. Initiating cleanup and closing procedures.");
@@ -164,7 +168,6 @@ namespace QuantConnect.IEX
 
         private void RemoveOldClient(ConcurrentQueue<EventSource> eventSourceClients)
         {
-            Log.Debug($"IEXEvent.RemoveOldClient: ConcurrentQueue Before: {eventSourceClients.Count}");
             while (eventSourceClients.Count > 0)
             {
                 if (eventSourceClients.TryDequeue(out var client))
@@ -173,7 +176,6 @@ namespace QuantConnect.IEX
                     client.DisposeSafely();
                 }
             }
-            Log.Debug($"IEXEvent.RemoveOldClient: ConcurrentQueue After: {eventSourceClients.Count}");
         }
 
         public void Dispose()

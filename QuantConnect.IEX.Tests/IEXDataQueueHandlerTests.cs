@@ -20,9 +20,11 @@ using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Tests;
 using QuantConnect.Logging;
+using Microsoft.CodeAnalysis;
 using System.Threading.Tasks;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 namespace QuantConnect.IEX.Tests
 {
@@ -80,17 +82,31 @@ namespace QuantConnect.IEX.Tests
             iexDataQueueHandler.Dispose();
         }
 
+        protected static IEnumerable<TestCaseData> TestCaseDataSymbolsConfigs
+        {
+            get
+            {
+                var resolution = Resolution.Second;
+                var configs = new Queue<SubscriptionDataConfig>();
+                foreach (var symbol in new[] { Symbols.GOOG, Symbols.AAPL, Symbols.MSFT, Symbols.SPY })
+                {
+                    foreach (var config in GetSubscriptionDataConfigs(symbol, resolution))
+                    {
+                        configs.Enqueue(config);
+                    }
+                }
+
+                yield return new TestCaseData(configs);
+            }
+        }
+
         /// <summary>
         /// Subscribe to multiple symbols in a series of calls
         /// </summary>
-        [Test]
-        public void IEXCouldSubscribeManyTimes()
+        [TestCaseSource(nameof(TestCaseDataSymbolsConfigs))]
+        public void IEXCouldSubscribeManyTimes(Queue<SubscriptionDataConfig> configs)
         {
-            var configs = new List<SubscriptionDataConfig>();
-            foreach (var symbol in new[] { Symbols.GOOG, Symbols.AAPL, Symbols.MSFT, Symbols.SPY, Symbol.Create("FB", SecurityType.Equity, Market.USA) })
-            {
-                configs.AddRange(GetSubscriptionDataConfigs(symbol, Resolution.Second));
-            }
+            var ticks = new List<BaseData>();
 
             foreach (var config in configs)
             {
@@ -100,7 +116,28 @@ namespace QuantConnect.IEX.Tests
                     {
                         if (tick != null)
                         {
-                            Log.Trace(tick.ToString());
+                            switch (tick)
+                            {
+                                case TradeBar tradeBar:
+                                    Assert.Greater(tradeBar.Open, 0m);
+                                    Assert.Greater(tradeBar.High, 0m);
+                                    Assert.Greater(tradeBar.Low, 0m);
+                                    Assert.Greater(tradeBar.Close, 0m);
+                                    Assert.IsTrue(tradeBar.DataType == MarketDataType.TradeBar);
+                                    Assert.IsTrue(tradeBar.Period.ToHigherResolutionEquivalent(true) == config.Resolution);
+                                    Assert.That(tradeBar.Time, Is.Not.EqualTo(DateTime.UnixEpoch));
+                                    Assert.That(tradeBar.EndTime, Is.Not.EqualTo(DateTime.UnixEpoch));
+                                    break;
+                                case QuoteBar quoteBar:
+                                    Assert.IsTrue(quoteBar.DataType == MarketDataType.QuoteBar);
+                                    Assert.That(quoteBar.Time, Is.Not.EqualTo(DateTime.UnixEpoch));
+                                    Assert.Greater(quoteBar.Price, 0m);
+                                    Assert.Greater(quoteBar.Value, 0m);
+                                    Assert.IsTrue(quoteBar.Period.ToHigherResolutionEquivalent(true) == config.Resolution);
+                                    break;
+                            }
+
+                            ticks.Add(tick);
                         }
                     });
             }
@@ -113,6 +150,68 @@ namespace QuantConnect.IEX.Tests
             }
 
             Thread.Sleep(20000);
+
+            Assert.Greater(ticks.Count, 0);
+        }
+
+        [TestCaseSource(nameof(TestCaseDataSymbolsConfigs))]
+        public void IEXSubscribeToSeveralThenUnSubscribeExceptOne(Queue<SubscriptionDataConfig> configs)
+        {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var resetEvent = new ManualResetEvent(false);
+
+            var tempDictionary = new ConcurrentDictionary<Symbol, int>();
+            foreach (var config in configs)
+            {
+                tempDictionary[config.Symbol] = 0;
+            }
+
+            foreach (var config in configs)
+            {
+                ProcessFeed(
+                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    tick =>
+                    {
+                        if (tick != null)
+                        {
+                            Log.Debug($"{nameof(IEXDataQueueHandlerTests)}: tick: {tick}");
+
+                            tempDictionary.AddOrUpdate(tick.Symbol, 1, (id, count) => count + 1);
+
+                            if (tempDictionary.All(count => count.Value > 5))
+                            {
+                                resetEvent.Set();
+                            }
+                        }
+                    });
+            }
+
+            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancellationTokenSource.Token));
+
+            // Unsubscribe from all symbols except one. (Why 2, cuz we have subscribe on Quote And Trade)
+            for (int i = configs.Count; i > 2; i--)
+            {
+                configs.TryDequeue(out var config);
+                iexDataQueueHandler.Unsubscribe(config);
+                tempDictionary.TryRemove(config.Symbol, out _);
+            }
+
+            Thread.Sleep(TimeSpan.FromSeconds(10));
+            Assert.That(configs.Count, Is.EqualTo(2));
+
+            resetEvent.Reset();
+            tempDictionary = new ConcurrentDictionary<Symbol, int>();
+
+            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancellationTokenSource.Token));
+
+            for (int i = configs.Count; i > 0; i--)
+            {
+                configs.TryDequeue(out var config);
+                iexDataQueueHandler.Unsubscribe(config);
+            }
+
+            Thread.Sleep(TimeSpan.FromSeconds(1));
+            cancellationTokenSource.Cancel();
         }
 
         [Test]
@@ -176,7 +275,7 @@ namespace QuantConnect.IEX.Tests
                 }
             }
 
-            Thread.Sleep(20_000);
+            Thread.Sleep(-1);
             Assert.IsTrue(iexDataQueueHandler.IsConnected);
         }
 
@@ -205,7 +304,7 @@ namespace QuantConnect.IEX.Tests
             });
         }
 
-        private IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
+        private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
         {
             var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
             foreach (var subscription in GetSubscriptionDataConfigs(symbol, resolution))
@@ -213,13 +312,13 @@ namespace QuantConnect.IEX.Tests
                 yield return subscription;
             }
         }
-        private IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(Symbol symbol, Resolution resolution)
+        private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(Symbol symbol, Resolution resolution)
         {
             yield return GetSubscriptionDataConfig<TradeBar>(symbol, resolution);
             yield return GetSubscriptionDataConfig<QuoteBar>(symbol, resolution);
         }
 
-        private SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
+        private static SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
         {
             return new SubscriptionDataConfig(
                 typeof(T),
