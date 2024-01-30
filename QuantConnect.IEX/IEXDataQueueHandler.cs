@@ -187,7 +187,7 @@ namespace QuantConnect.IEX
 
         private void HandleTopOfBookResponse(IEnumerable<DataStreamTopOfBook>? topOfBooks)
         {
-            if (topOfBooks == null || !topOfBooks.Any())
+            if (topOfBooks == null)
             {
                 return;
             }
@@ -228,7 +228,7 @@ namespace QuantConnect.IEX
 
         private void HandleLastSaleResponse(IEnumerable<DataStreamLastSale>? lastSales)
         {
-            if (lastSales == null || !lastSales.Any())
+            if (lastSales == null)
             {
                 return;
             }
