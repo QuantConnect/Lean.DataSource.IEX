@@ -17,7 +17,6 @@ using System;
 using System.Linq;
 using NUnit.Framework;
 using System.Collections.Generic;
-using QuantConnect.IEX.Downloader;
 
 namespace QuantConnect.IEX.Tests
 {

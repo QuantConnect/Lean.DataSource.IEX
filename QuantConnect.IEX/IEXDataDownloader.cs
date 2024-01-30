@@ -18,7 +18,7 @@ using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 
-namespace QuantConnect.IEX.Downloader
+namespace QuantConnect.IEX
 {
     public class IEXDataDownloader : IDataDownloader, IDisposable
     {

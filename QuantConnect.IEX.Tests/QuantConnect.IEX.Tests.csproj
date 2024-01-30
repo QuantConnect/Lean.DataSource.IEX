@@ -26,7 +26,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\QuantConnect.IEX.Downloader\QuantConnect.IEX.Downloader.csproj" />
 		<ProjectReference Include="..\QuantConnect.IEX\QuantConnect.IEX.csproj" />
 		<ProjectReference Include="..\..\Lean\Tests\QuantConnect.Tests.csproj" />
 	</ItemGroup>
