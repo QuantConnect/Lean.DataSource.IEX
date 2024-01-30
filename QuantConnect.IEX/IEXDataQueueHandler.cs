@@ -141,9 +141,7 @@ namespace QuantConnect.IEX
                 plan = "Grow";
             }
 
-            RateLimits.TryGetValue(Enum.Parse<IEXPricePlan>(plan, true), out var rateLimit);
-
-            _rateGate = new RateGate(rateLimit, Time.OneSecond);
+            _rateGate = new RateGate(RateLimits[Enum.Parse<IEXPricePlan>(plan, true)], Time.OneSecond);
 
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
 
@@ -300,8 +298,8 @@ namespace QuantConnect.IEX
             if (dataConfig.ExtendedMarketHours)
             {
                 throw new InvalidOperationException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: " +
-                    $"Unfortunately no updates could be received from IEX outside the regular exchange open hours. " +
-                    "Please be aware that only regular hours updates will be submitted to an algorithm.");
+                    $"Algorithm Subscription Error - Extended market hours not supported. " +
+                    $"Subscribe during regular hours for optimal performance.");
             }
 
             if (!CanSubscribe(dataConfig.Symbol))
