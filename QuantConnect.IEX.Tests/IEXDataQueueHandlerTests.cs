@@ -260,27 +260,11 @@ namespace QuantConnect.IEX.Tests
             var cancellationTokenSource = new CancellationTokenSource();
             var resetEvent = new AutoResetEvent(false);
 
-            var responseDataCounter = 0;
-            foreach (var ticker in HardCodedSymbolsSNP.Take(100))
+            foreach (var ticker in HardCodedSymbolsSNP.Take(250))
             {
                 foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
                 {
                     iexDataQueueHandler.Subscribe(config, (s, e) => { });
-                    ProcessFeed(
-                        iexDataQueueHandler.Subscribe(config, (s, e) => { }),
-                        tick =>
-                        {
-                            if (tick != null)
-                            {
-                                Log.Trace($"Response: {tick}");
-                                responseDataCounter++;
-                            }
-
-                            if (responseDataCounter > 100)
-                            {
-                                resetEvent.Set();
-                            }
-                        });
                 }
             }
 
@@ -290,7 +274,7 @@ namespace QuantConnect.IEX.Tests
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
         {
-            Task.Run(() =>
+            Task.Factory.StartNew(() =>
             {
                 try
                 {
@@ -299,7 +283,7 @@ namespace QuantConnect.IEX.Tests
                         BaseData tick = enumerator.Current;
                         callback?.Invoke(tick);
 
-                        Thread.Sleep(200);
+                        Thread.Sleep(1000);
                     }
                 }
                 catch (AssertionException)

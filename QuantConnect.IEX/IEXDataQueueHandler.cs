@@ -181,20 +181,17 @@ namespace QuantConnect.IEX
                 {
                     try
                     {
-                        Log.Debug("Before WaitOne");
                         _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
 
-                        Log.Debug("UpdateSubscription - Before ");
+                        Thread.Sleep(TimeSpan.FromMilliseconds(1500));
+
+                        _refreshEvent.Reset();
+
                         var subscribeSymbols = _symbols.Keys.ToArray();
-                        Log.Debug($"subscribeSymbols: {string.Join(',', subscribeSymbols)}");
                         foreach (var client in _clients)
                         {
                             client.UpdateSubscription(subscribeSymbols);
                         }
-                        Log.Debug("UpdateSubscription - After ");
-
-                        Log.Debug("Reset");
-                        _refreshEvent.Reset();
                     }
                     catch (Exception ex)
                     {
