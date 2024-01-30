@@ -324,17 +324,12 @@ namespace QuantConnect.IEX
         {
             _aggregator.DisposeSafely();
 
-            if (!_symbols.IsEmpty)
-            {
                 foreach (var client in _clients)
                 {
                     client.Dispose();
                 }
-            }
 
             Log.Trace("IEXDataQueueHandler.Dispose(): Disconnected from IEX data provider");
-
-            GC.SuppressFinalize(this);
         }
 
         #region IHistoryProvider implementation
