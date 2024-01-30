@@ -26,6 +26,7 @@ using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using System.Globalization;
 using QuantConnect.Interfaces;
+using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using QuantConnect.IEX.Response;
 using QuantConnect.Configuration;
@@ -76,6 +77,11 @@ namespace QuantConnect.IEX
         /// Represents a concurrent dictionary that stores <see cref="Symbol"/> with unique ticker keys.
         /// </summary>
         private readonly ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
+
+        /// <summary>
+        /// Represents a mapping of symbols to their corresponding time zones for exchange information.
+        /// </summary>
+        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new Dictionary<Symbol, DateTimeZone>();
 
         /// <summary>
         /// Gets the total number of data points emitted by this history provider.
@@ -213,10 +219,8 @@ namespace QuantConnect.IEX
                     continue;
                 }
 
-                var time = Time.UnixMillisecondTimeStampToDateTime(topOfBook.LastUpdated).ConvertFromUtc(TimeZones.NewYork);
-
                 var quoteTick = new Tick(
-                    time,
+                    ConvertTickTimeBySymbol(symbol, topOfBook.LastUpdated),
                     symbol, saleCondition: string.Empty, symbol.ID.Market, topOfBook.BidSize, topOfBook.BidPrice, topOfBook.AskSize, topOfBook.AskPrice);
 
                 lock (_lock)
@@ -244,7 +248,7 @@ namespace QuantConnect.IEX
                 }
 
                 var tradeTick = new Tick(
-                    Time.UnixMillisecondTimeStampToDateTime(lastSale.Time).ConvertFromUtc(TimeZones.NewYork),
+                    ConvertTickTimeBySymbol(symbol, lastSale.Time),
                     symbol, saleCondition: string.Empty, symbol.ID.Market, lastSale.Size, lastSale.Price);
 
                 lock (_lock)
@@ -398,8 +402,8 @@ namespace QuantConnect.IEX
         private IEnumerable<BaseData> ProcessHistoryRequests(Data.HistoryRequest request)
         {
             var ticker = request.Symbol.ID.Symbol;
-            var start = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork);
-            var end = request.EndTimeUtc.ConvertFromUtc(TimeZones.NewYork);
+            var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
+            var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
 
             if (request.Resolution == Resolution.Minute && start <= DateTime.Today.AddDays(-30))
             {
@@ -418,7 +422,7 @@ namespace QuantConnect.IEX
                 ". Please wait..");
 
             const string baseUrl = "https://cloud.iexapis.com/stable/stock";
-            var now = DateTime.UtcNow.ConvertFromUtc(TimeZones.NewYork);
+            var now = ConvertTickTimeBySymbol(request.Symbol, DateTime.UtcNow);
             var span = now - start;
             var urls = new List<string>();
 
@@ -566,6 +570,35 @@ namespace QuantConnect.IEX
         }
 
         #endregion
+
+        /// <summary>
+        /// Converts the provided tick timestamp, given in milliseconds since Epoch, to the exchange time zone associated with the specified Lean symbol.
+        /// </summary>
+        /// <param name="symbol">The Lean symbol for which the timestamp is associated.</param>
+        /// <param name="millisecondsEpochTime">The timestamp in milliseconds since Epoch.</param>
+        /// <returns>A DateTime object representing the converted timestamp in the exchange time zone.</returns>
+        private DateTime ConvertTickTimeBySymbol(Symbol symbol, long millisecondsEpochTime)
+        {
+            return ConvertTickTimeBySymbol(symbol, Time.UnixMillisecondTimeStampToDateTime(millisecondsEpochTime));
+        }
+
+        /// <summary>
+        /// Converts the provided tick timestamp, given in DateTime UTC Kind, to the exchange time zone associated with the specified Lean symbol.
+        /// </summary>
+        /// <param name="symbol">The Lean symbol for which the timestamp is associated.</param>
+        /// <param name="dateTimeUtc">The DateTime in Utc format Kind</param>
+        /// <returns>A DateTime object representing the converted timestamp in the exchange time zone.</returns>
+        private DateTime ConvertTickTimeBySymbol(Symbol symbol, DateTime dateTimeUtc)
+        {
+            if (!_symbolExchangeTimeZones.TryGetValue(symbol, out var exchangeTimeZone))
+            {
+                // read the exchange time zone from market-hours-database
+                exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+                _symbolExchangeTimeZones.Add(symbol, exchangeTimeZone);
+            }
+
+            return dateTimeUtc.ConvertFromUtc(exchangeTimeZone);
+        }
 
         private class ModulesReadLicenseRead : Api.RestResponse
         {
