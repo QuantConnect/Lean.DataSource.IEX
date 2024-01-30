@@ -86,7 +86,7 @@ namespace QuantConnect.IEX
         /// Aggregates ticks and bars based on given subscriptions.
         /// </summary>
         private readonly IDataAggregator _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
-            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"));
+            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
 
         /// <summary>
         /// Handle subscription/unSubscription processes 
