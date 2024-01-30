@@ -336,7 +336,7 @@ namespace QuantConnect.IEX.Tests
                 TimeZones.Utc,
                 TimeZones.Utc,
                 true,
-                true,
+                extendedHours: false,
                 false);
         }
     }

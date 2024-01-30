@@ -55,8 +55,6 @@ namespace QuantConnect.IEX
         /// </summary>
         protected readonly ConcurrentQueue<EventSource> EventSourceClients = new();
 
-        private HashSet<string> subscribeTickers = new();
-
         /// <summary>
         /// Represents an AutoResetEvent used for synchronizing the context, waiting for the client to be open and successfully subscribed.
         /// </summary>
@@ -101,28 +99,25 @@ namespace QuantConnect.IEX
         /// <exception cref="TimeoutException">Thrown when the operation times out.</exception>
         public void UpdateSubscription(IEnumerable<string> newSymbols)
         {
-            // Update collection
-            foreach (var symbol in newSymbols)
-            {
-                if (!subscribeTickers.Add(symbol))
-                {
-                    subscribeTickers.Remove(symbol);
-                }
-            }
-
+            Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}: newSymbols = {string.Join(',', newSymbols)}");
+            Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}.{nameof(RemoveOldClient)} - Before");
             // Remove and dispose old event source clients
             RemoveOldClient(EventSourceClients);
+            Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}.{nameof(RemoveOldClient)} - After");
 
             // Create new client for every package (make sure that we do not exceed the rate-gate-limit while creating)
-            foreach (var tickerChunk in subscribeTickers.Chunk(MaximumSymbolsPerConnectionLimit))
+            foreach (var tickerChunk in newSymbols.Chunk(MaximumSymbolsPerConnectionLimit))
             {
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}: - Before");
                 var client = CreateNewSubscription(tickerChunk);
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}: - After");
 
                 if (!_subscriptionSyncEvent.WaitOne(TimeSpan.FromSeconds(30)))
                 {
                     throw new TimeoutException($"{nameof(IEXEventSourceCollection)}.{nameof(UpdateSubscription)}: Could not update subscription within a timeout");
                 }
 
+                Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}: - Add new client to Queue");
                 // Add to the queue
                 EventSourceClients.Enqueue(client);
             }

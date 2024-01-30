@@ -110,6 +110,13 @@ namespace QuantConnect.IEX
         /// </summary>
         private readonly RateGate _rateGate;
 
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
+
+        /// <summary>
+        /// Represents a reset event that facilitates updating user Subscriptions or UnSubscriptions on symbols.
+        /// </summary>
+        private readonly ManualResetEvent _refreshEvent = new ManualResetEvent(false);
+
         /// <summary>
         /// A static dictionary that associates each IEX cloud Price Plan with its corresponding rate limit.
         /// </summary>
@@ -159,44 +166,73 @@ namespace QuantConnect.IEX
             }
 
             ValidateSubscription();
+
+            // Initiates the stream listener task.
+            StreamAction();
+        }
+
+        private void StreamAction()
+        {
+            // In this thread, we check at each interval whether the client needs to be updated
+            // Subscription renewal requests may come in dozens and all at relatively same time - we cannot update them one by one when work with SSE
+            Task.Factory.StartNew(() =>
+            {
+                while (!_cancellationTokenSource.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        Log.Debug("Before WaitOne");
+                        _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
+
+                        Log.Debug("UpdateSubscription - Before ");
+                        var subscribeSymbols = _symbols.Keys.ToArray();
+                        Log.Debug($"subscribeSymbols: {string.Join(',', subscribeSymbols)}");
+                        foreach (var client in _clients)
+                        {
+                            client.UpdateSubscription(subscribeSymbols);
+                        }
+                        Log.Debug("UpdateSubscription - After ");
+
+                        Log.Debug("Reset");
+                        _refreshEvent.Reset();
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: {ex}");
+                    }
+                }
+                Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: End");
+            }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private bool Subscribe(IEnumerable<Symbol> symbols, TickType _)
         {
-            var tickers = new List<string>();
             foreach (var symbol in symbols)
             {
                 if (!_symbols.TryAdd(symbol.Value, symbol))
                 {
                     throw new InvalidOperationException($"Invalid logic, SubscriptionManager tried to subscribe to existing symbol : {symbol.Value}");
                 }
-
-                tickers.Add(symbol.Value);
             }
 
-            foreach (var client in _clients)
-            {
-                client.UpdateSubscription(tickers);
-            }
-
+            Refresh();
             return true;
         }
 
         private bool Unsubscribe(IEnumerable<Symbol> symbols, TickType _)
         {
-            var tickers = new List<string>();
             foreach (var symbol in symbols)
             {
                 _symbols.TryRemove(symbol.Value, out var _);
-                tickers.Add(symbol.Value);
             }
 
-            foreach (var client in _clients)
-            {
-                client.UpdateSubscription(tickers);
-            }
-
+            Refresh();
             return true;
+        }
+
+        private void Refresh()
+        {
+            _refreshEvent.Set();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
