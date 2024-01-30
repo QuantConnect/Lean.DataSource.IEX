@@ -377,6 +377,12 @@ namespace QuantConnect.IEX
                     return Enumerable.Empty<Slice>();
                 }
 
+                if (request.StartTimeUtc >= request.EndTimeUtc)
+                {
+                    Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                    return Enumerable.Empty<Slice>();
+                }
+
                 var history = ProcessHistoryRequests(request);
                 var subscription = CreateSubscription(request, history);
                 subscriptions.Add(subscription);
@@ -464,22 +470,20 @@ namespace QuantConnect.IEX
                     }
             }
 
-            // Download and parse data
-            var responses = new List<string>();
-
             foreach (var url in urls)
             {
                 var response = ExecuteGetRequest(url);
-                responses.Add(response);
-            }
 
-            foreach (var response in responses)
-            {
                 var parsedResponse = JArray.Parse(response);
 
                 // Parse
                 foreach (var item in parsedResponse.Children())
                 {
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
                     DateTime date;
                     TimeSpan period;
                     if (item["minute"] != null)
@@ -493,11 +497,6 @@ namespace QuantConnect.IEX
                     {
                         date = Parse.DateTime(item["date"].Value<string>());
                         period = TimeSpan.FromDays(1);
-                    }
-
-                    if (date < start || date > end)
-                    {
-                        continue;
                     }
 
                     Interlocked.Increment(ref _dataPointCount);

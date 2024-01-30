@@ -158,7 +158,7 @@ namespace QuantConnect.IEX.Tests
         [Test, TestCaseSource(nameof(InvalidSymbolTestCaseData))]
         public void GetHistoryInvalidSymbolThrowException(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            Assert.Throws<Exception>(() => GetHistory(symbol, resolution, tickType, period));
+            Assert.Throws<ArgumentException>(() => GetHistory(symbol, resolution, tickType, period));
         }
 
         private Slice[] GetHistory(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
