@@ -776,7 +776,7 @@ namespace QuantConnect.IEX
             }
             catch (Exception e)
             {
-                Log.Error($"PolygonDataQueueHandler.ValidateSubscription(): Failed during validation, shutting down. Error : {e.Message}");
+                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(ValidateSubscription)}: Failed during validation, shutting down. Error : {e.Message}");
                 throw;
             }
         }
