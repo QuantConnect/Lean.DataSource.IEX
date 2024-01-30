@@ -355,12 +355,6 @@ namespace QuantConnect.IEX
         /// <returns>An enumerable of the slices of data covering the span specified in each request</returns>
         public override IEnumerable<Slice> GetHistory(IEnumerable<Data.HistoryRequest> requests, DateTimeZone sliceTimeZone)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey))
-            {
-                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: History calls for IEX require an API key.");
-                return Enumerable.Empty<Slice>();
-            }
-
             // Create subscription objects from the configs
             var subscriptions = new List<Subscription>();
             foreach (var request in requests)
