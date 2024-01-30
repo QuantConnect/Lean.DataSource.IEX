@@ -20,6 +20,7 @@ using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Tests;
 using QuantConnect.Logging;
+using System.Threading.Tasks;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
@@ -75,10 +76,9 @@ namespace QuantConnect.IEX.Tests
                     .SetDescription("Invalid resolution - Hour resolution, 1 day period.")
                     .SetCategory("Invalid");
 
-                // Invalid period - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), false)
-                    .SetDescription("Invalid period - Beyond 30 days, Minute resolution.")
-                    .SetCategory("Invalid");
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), true)
+                    .SetDescription("Valid parameters - Beyond 45 days, Minute resolution.")
+                    .SetCategory("Valid");
 
                 yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(-15), false)
                     .SetDescription("Invalid period - Date in the future, Daily resolution.")
@@ -159,6 +159,29 @@ namespace QuantConnect.IEX.Tests
         public void GetHistoryInvalidSymbolThrowException(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
             Assert.Throws<ArgumentException>(() => GetHistory(symbol, resolution, tickType, period));
+        }
+
+        [TestCase(10)]
+        [TestCase(20)]
+        public void GetHistoryReturnsValidDataForMultipleConcurrentRequests(int amountOfTask)
+        {
+            var symbol = Symbols.SPY;
+            var tickType = TickType.Trade;
+            var resolution = Resolution.Minute;
+            var period = TimeSpan.FromDays(10);
+
+            var taskArray = new Task<List<Slice>>[amountOfTask];
+            for (int i = 0; i < taskArray.Length; i++)
+            {
+                taskArray[i] = Task.Factory.StartNew(() => GetHistory(symbol, resolution, tickType, period).ToList());
+            }
+
+            Task.WaitAll(taskArray);
+
+            foreach (var task in taskArray)
+            {
+                Assert.IsNotEmpty(task.Result);
+            }
         }
 
         private Slice[] GetHistory(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)

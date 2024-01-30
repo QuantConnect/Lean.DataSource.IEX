@@ -25,6 +25,7 @@ using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using System.Globalization;
+using QuantConnect.IEX.Enums;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
@@ -86,7 +87,7 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Represents a mapping of symbols to their corresponding time zones for exchange information.
         /// </summary>
-        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new Dictionary<Symbol, DateTimeZone>();
+        private readonly ConcurrentDictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new ConcurrentDictionary<Symbol, DateTimeZone>();
 
         /// <summary>
         /// Gets the total number of data points emitted by this history provider.
@@ -105,6 +106,21 @@ namespace QuantConnect.IEX
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
         /// <summary>
+        /// Represents a RateGate instance used to control the rate of certain operations.
+        /// </summary>
+        private readonly RateGate _rateGate;
+
+        /// <summary>
+        /// A static dictionary that associates each IEX cloud Price Plan with its corresponding rate limit.
+        /// </summary>
+        private static readonly Dictionary<IEXPricePlan, int> RateLimits = new()
+        {
+            { IEXPricePlan.Launch, 5 },
+            { IEXPricePlan.Grow, 200 },
+            { IEXPricePlan.Enterprise, 1500 }
+        };
+
+        /// <summary>
         /// Returns whether the data provider is connected
         /// True if the data provider is connected
         /// </summary>
@@ -120,6 +136,15 @@ namespace QuantConnect.IEX
                 throw new ArgumentException("Invalid or missing IEX API key. Please ensure that the API key is set and not empty.");
             }
 
+            if (Config.TryGetValue("iex-price-plan", "Grow", out var plan) && string.IsNullOrEmpty(plan))
+            {
+                plan = "Grow";
+            }
+
+            RateLimits.TryGetValue(Enum.Parse<IEXPricePlan>(plan, true), out var rateLimit);
+
+            _rateGate = new RateGate(rateLimit, Time.OneSecond);
+
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
 
             _subscriptionManager.SubscribeImpl += Subscribe;
@@ -131,7 +156,8 @@ namespace QuantConnect.IEX
                 _clients.Add(new IEXEventSourceCollection(
                     (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
                     _apiKey,
-                    channelName));
+                    channelName,
+                    _rateGate));
             }
 
             ValidateSubscription();
@@ -323,6 +349,7 @@ namespace QuantConnect.IEX
         public void Dispose()
         {
             _aggregator.DisposeSafely();
+            _rateGate.DisposeSafely();
 
             foreach (var client in _clients)
             {
@@ -400,19 +427,13 @@ namespace QuantConnect.IEX
             var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
             var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
 
-            if (request.Resolution == Resolution.Minute && start <= ConvertTickTimeBySymbol(request.Symbol, DateTime.UtcNow.AddDays(-30)))
-            {
-                Log.Error("IEXDataQueueHandler.GetHistory(): History calls with minute resolution for IEX available only for trailing 30 calendar days.");
-                yield break;
-            }
-
             if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
             {
                 Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX only support daily & minute resolution.");
                 yield break;
             }
 
-            Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)}.Request: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
+            Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
 
             var span = end - start;
             var urls = new List<string>();
@@ -541,14 +562,19 @@ namespace QuantConnect.IEX
         /// <exception cref="Exception">Thrown when the GET request fails or returns a non-OK status code.</exception>
         private string ExecuteGetRequest(string url)
         {
-            var response = _restClient.Execute(new RestRequest(url, Method.GET));
-
-            if (response.StatusCode != HttpStatusCode.OK)
+            lock (_lock)
             {
-                throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)} failed: [{(int)response.StatusCode}] {response.StatusDescription}, Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
-            }
+                _rateGate.WaitToProceed();
 
-            return response.Content;
+                var response = _restClient.Execute(new RestRequest(url, Method.GET));
+
+                if (response.StatusCode != HttpStatusCode.OK)
+                {
+                    throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)} failed: [{(int)response.StatusCode}] {response.StatusDescription}, Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
+                }
+
+                return response.Content;
+            }
         }
 
         #endregion
@@ -576,7 +602,7 @@ namespace QuantConnect.IEX
             {
                 // read the exchange time zone from market-hours-database
                 exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
-                _symbolExchangeTimeZones.Add(symbol, exchangeTimeZone);
+                _symbolExchangeTimeZones.TryAdd(symbol, exchangeTimeZone);
             }
 
             return dateTimeUtc.ConvertFromUtc(exchangeTimeZone);

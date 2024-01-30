@@ -62,9 +62,10 @@ namespace QuantConnect.IEX
         /// </summary>
         public AutoResetEvent _subscriptionSyncEvent = new(false);
 
-        // IEX API documentation says:
-        // "We limit requests to 100 per second per IP measured in milliseconds, so no more than 1 request per 10 milliseconds."
-        private readonly RateGate _rateGate = new RateGate(200, TimeSpan.FromSeconds(1));
+        /// <summary>
+        /// Represents a RateGate instance used to control the rate of certain operations.
+        /// </summary>
+        private readonly RateGate _rateGate;
 
         /// <summary>
         /// Indicates whether a client is connected - i.e delivers any data.
@@ -82,12 +83,15 @@ namespace QuantConnect.IEX
         /// <param name="messageAction">Message Event handler by channel name.</param>
         /// <param name="apiKey">The Api-key of IEX cloud platform</param>
         /// <param name="subscriptionChannelName">The name of channel to subscription in current instance of <see cref="IEXEventSourceCollection"/></param>
-        public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName)
+        /// <param name="rateGate">RateGate instance used to control the rate of certain operations.</param>
+        public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName, 
+            RateGate rateGate)
         {
             _messageAction = messageAction;
             _apiKey = apiKey;
             dataStreamChannelName = subscriptionChannelName;
             dataStreamSubscriptionUrl = IEXDataStreamChannels.BaseDataStreamUrl + subscriptionChannelName;
+            _rateGate = rateGate;
         }
 
         /// <summary>
