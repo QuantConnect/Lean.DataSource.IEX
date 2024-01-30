@@ -179,23 +179,19 @@ namespace QuantConnect.IEX
             {
                 while (!_cancellationTokenSource.Token.IsCancellationRequested)
                 {
-                    try
+                    _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
+
+                    if (_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(1500)))
                     {
-                        _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
-
-                        Thread.Sleep(TimeSpan.FromMilliseconds(1500));
-
-                        _refreshEvent.Reset();
-
-                        var subscribeSymbols = _symbols.Keys.ToArray();
-                        foreach (var client in _clients)
-                        {
-                            client.UpdateSubscription(subscribeSymbols);
-                        }
+                        break;
                     }
-                    catch (Exception ex)
+
+                    _refreshEvent.Reset();
+
+                    var subscribeSymbols = _symbols.Keys.ToArray();
+                    foreach (var client in _clients)
                     {
-                        throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: {ex}");
+                        client.UpdateSubscription(subscribeSymbols);
                     }
                 }
                 Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: End");
