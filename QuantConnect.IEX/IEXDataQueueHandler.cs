@@ -171,6 +171,10 @@ namespace QuantConnect.IEX
             StreamAction();
         }
 
+        /// <summary>
+        /// Initiates and manages a background task for streaming real-time data updates to multiple clients.
+        /// The task periodically checks for subscription renewal requests and efficiently updates all clients simultaneously.
+        /// </summary>
         private void StreamAction()
         {
             // In this thread, we check at each interval whether the client needs to be updated
@@ -179,16 +183,22 @@ namespace QuantConnect.IEX
             {
                 while (!_cancellationTokenSource.Token.IsCancellationRequested)
                 {
+                    // Wait for the signal to start processing updates 
                     _refreshEvent.WaitOne(-1, _cancellationTokenSource.Token);
 
+                    // Check for cancellation with a 1.5-second timeout
                     if (_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(1500)))
                     {
+                        // Break out of the loop if cancellation is requested
                         break;
                     }
 
+                    // Reset the signal for the next iteration
                     _refreshEvent.Reset();
 
                     var subscribeSymbols = _symbols.Keys.ToArray();
+
+                    // Update subscription for each registered client
                     foreach (var client in _clients)
                     {
                         client.UpdateSubscription(subscribeSymbols);
