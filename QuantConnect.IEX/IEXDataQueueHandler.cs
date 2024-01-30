@@ -36,7 +36,6 @@ using System.Net.NetworkInformation;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using QuantConnect.Lean.Engine.DataFeeds;
-using static QuantConnect.StringExtensions;
 using QuantConnect.Lean.Engine.HistoricalData;
 
 namespace QuantConnect.IEX
@@ -47,6 +46,12 @@ namespace QuantConnect.IEX
     /// </summary>
     public class IEXDataQueueHandler : SynchronizingHistoryProvider, IDataQueueHandler
     {
+        /// <summary>
+        /// The base URL for the deprecated IEX Cloud API, used to retrieve adjusted and unadjusted historical data.
+        /// Deprecated documentation: <see href="https://iexcloud.io/docs/api/"/>
+        /// </summary>
+        const string BaseUrl = "https://cloud.iexapis.com/stable/stock";
+
         /// <summary>
         /// Flag indicating whether a warning about unsupported data types in user history should be suppressed to prevent spam.
         /// </summary>
@@ -270,7 +275,7 @@ namespace QuantConnect.IEX
             {
                 throw new InvalidOperationException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: " +
                     $"Unfortunately no updates could be received from IEX outside the regular exchange open hours. " +
-                          "Please be aware that only regular hours updates will be submitted to an algorithm.");
+                    "Please be aware that only regular hours updates will be submitted to an algorithm.");
             }
 
             if (!CanSubscribe(dataConfig.Symbol))
@@ -319,10 +324,10 @@ namespace QuantConnect.IEX
         {
             _aggregator.DisposeSafely();
 
-                foreach (var client in _clients)
-                {
-                    client.Dispose();
-                }
+            foreach (var client in _clients)
+            {
+                client.Dispose();
+            }
 
             Log.Trace("IEXDataQueueHandler.Dispose(): Disconnected from IEX data provider");
         }
@@ -389,7 +394,7 @@ namespace QuantConnect.IEX
             var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
             var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
 
-            if (request.Resolution == Resolution.Minute && start <= DateTime.Today.AddDays(-30))
+            if (request.Resolution == Resolution.Minute && start <= ConvertTickTimeBySymbol(request.Symbol, DateTime.UtcNow.AddDays(-30)))
             {
                 Log.Error("IEXDataQueueHandler.GetHistory(): History calls with minute resolution for IEX available only for trailing 30 calendar days.");
                 yield break;
@@ -401,13 +406,9 @@ namespace QuantConnect.IEX
                 yield break;
             }
 
-            Log.Trace("IEXDataQueueHandler.ProcessHistoryRequests(): Submitting request: " +
-                Invariant($"{request.Symbol.SecurityType}-{ticker}: {request.Resolution} {start}->{end}") +
-                ". Please wait..");
+            Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)}.Request: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
 
-            const string baseUrl = "https://cloud.iexapis.com/stable/stock";
-            var now = ConvertTickTimeBySymbol(request.Symbol, DateTime.UtcNow);
-            var span = now - start;
+            var span = end - start;
             var urls = new List<string>();
 
             switch (request.Resolution)
@@ -417,8 +418,7 @@ namespace QuantConnect.IEX
                         var begin = start;
                         while (begin < end)
                         {
-                            var url =
-                                $"{baseUrl}/{ticker}/chart/date/{begin.ToStringInvariant("yyyyMMdd")}?token={_apiKey}";
+                            var url = $"{BaseUrl}/{ticker}/chart/date/{begin.ToStringInvariant("yyyyMMdd")}?token={_apiKey}";
                             urls.Add(url);
                             begin = begin.AddDays(1);
                         }
@@ -457,8 +457,7 @@ namespace QuantConnect.IEX
                             suffix = "max";   // max is 15 years
                         }
 
-                        var url =
-                            $"{baseUrl}/{ticker}/chart/{suffix}?token={_apiKey}";
+                        var url = $"{BaseUrl}/{ticker}/chart/{suffix}?token={_apiKey}";
                         urls.Add(url);
 
                         break;
