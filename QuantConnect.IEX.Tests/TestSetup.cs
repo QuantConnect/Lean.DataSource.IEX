@@ -28,7 +28,6 @@ namespace QuantConnect.IEX.Tests
         [OneTimeSetUp]
         public void GlobalSetup()
         {
-            Log.DebuggingEnabled = true;
             Log.LogHandler = new CompositeLogHandler();
             Log.Trace("TestSetup(): starting...");
             ReloadConfiguration();
