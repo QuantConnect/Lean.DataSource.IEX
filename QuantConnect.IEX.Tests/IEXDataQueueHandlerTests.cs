@@ -243,7 +243,7 @@ namespace QuantConnect.IEX.Tests
             });
 
             Thread.Sleep(20000);
-            
+
             iexDataQueueHandler.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
 
             Log.Trace("Unsubscribing");
@@ -270,6 +270,26 @@ namespace QuantConnect.IEX.Tests
 
             resetEvent.WaitOne(TimeSpan.FromMinutes(2), cancellationTokenSource.Token);
             Assert.IsTrue(iexDataQueueHandler.IsConnected);
+        }
+
+        [Test]
+        public void SubscribeOnALotOfSymbolsThrowArgumentExceptionExceedsAllowedLimit()
+        {
+            int symbolCounter = HardCodedSymbolsSNP.Length;
+            Assert.Throws<ArgumentException>(() =>
+            {
+                var cancellationTokenSource = new CancellationTokenSource();
+
+                foreach (var ticker in HardCodedSymbolsSNP)
+                {
+                    foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
+                    {
+                        iexDataQueueHandler.Subscribe(config, (s, e) => { });
+                    }
+                }
+                cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
+            });
+            Assert.Less(iexDataQueueHandler.maxAllowedSymbolLimit, symbolCounter);
         }
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)

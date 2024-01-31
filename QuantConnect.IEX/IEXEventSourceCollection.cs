@@ -28,11 +28,6 @@ namespace QuantConnect.IEX
     public class IEXEventSourceCollection : IDisposable
     {
         /// <summary>
-        /// Maximum limit of available symbols allowed per connection.
-        /// </summary>
-        private const int MaximumSymbolsPerConnectionLimit = 50;
-
-        /// <summary>
         /// Full url to subscription on event updates
         /// </summary>
         private readonly string dataStreamSubscriptionUrl;
@@ -82,7 +77,7 @@ namespace QuantConnect.IEX
         /// <param name="apiKey">The Api-key of IEX cloud platform</param>
         /// <param name="subscriptionChannelName">The name of channel to subscription in current instance of <see cref="IEXEventSourceCollection"/></param>
         /// <param name="rateGate">RateGate instance used to control the rate of certain operations.</param>
-        public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName, 
+        public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName,
             RateGate rateGate)
         {
             _messageAction = messageAction;
@@ -103,7 +98,7 @@ namespace QuantConnect.IEX
             RemoveOldClient(EventSourceClients);
 
             // Create new client for every package (make sure that we do not exceed the rate-gate-limit while creating)
-            foreach (var tickerChunk in newSymbols.Chunk(MaximumSymbolsPerConnectionLimit))
+            foreach (var tickerChunk in newSymbols.Chunk(IEXDataStreamChannels.MaximumSymbolsPerConnectionLimit))
             {
                 var client = CreateNewSubscription(tickerChunk);
 

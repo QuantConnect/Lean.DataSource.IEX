@@ -26,6 +26,11 @@ namespace QuantConnect.IEX.Constants
     public sealed class IEXDataStreamChannels
     {
         /// <summary>
+        /// Maximum limit of available symbols allowed per connection.
+        /// </summary>
+        public const int MaximumSymbolsPerConnectionLimit = 50;
+
+        /// <summary>
         /// Base URL for IEX Cloud data streams.
         /// </summary>
         public const string BaseDataStreamUrl = "https://cloud-sse.iexapis.com/v1/";

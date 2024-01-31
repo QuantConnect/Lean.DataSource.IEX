@@ -120,11 +120,11 @@ namespace QuantConnect.IEX
         /// <summary>
         /// A static dictionary that associates each IEX cloud Price Plan with its corresponding rate limit.
         /// </summary>
-        private static readonly Dictionary<IEXPricePlan, int> RateLimits = new()
+        private readonly Dictionary<IEXPricePlan, (int requestPerSecond, int maximumClientsLimit)> RateLimits = new()
         {
-            { IEXPricePlan.Launch, 5 },
-            { IEXPricePlan.Grow, 200 },
-            { IEXPricePlan.Enterprise, 1500 }
+            { IEXPricePlan.Launch, (5, 10) },
+            { IEXPricePlan.Grow, (200, 10) },
+            { IEXPricePlan.Enterprise, (1500, int.MaxValue) }
         };
 
         /// <summary>
@@ -132,6 +132,11 @@ namespace QuantConnect.IEX
         /// True if the data provider is connected
         /// </summary>
         public bool IsConnected => _clients.All(client => client.IsConnected);
+
+        /// <summary>
+        /// Represents the maximum allowed symbol limit for a subscription.
+        /// </summary>
+        public readonly int maxAllowedSymbolLimit;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
@@ -148,7 +153,8 @@ namespace QuantConnect.IEX
                 plan = "Grow";
             }
 
-            _rateGate = new RateGate(RateLimits[Enum.Parse<IEXPricePlan>(plan, true)], Time.OneSecond);
+            var (requestPerSecond, maximumClients) = RateLimits[Enum.Parse<IEXPricePlan>(plan, true)];
+            _rateGate = new RateGate(requestPerSecond, Time.OneSecond);
 
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
 
@@ -165,7 +171,10 @@ namespace QuantConnect.IEX
                     _rateGate));
             }
 
-            ValidateSubscription();
+            // Calculate the maximum allowed symbol limit based on the IEX price plan's client capacity.
+            // We subscribe to both quote and trade channels, so we divide by the number of subscriptions,
+            // then multiply by the maximum available symbols per connection to get the limit.
+            maxAllowedSymbolLimit = maximumClients / IEXDataStreamChannels.Subscriptions.Length * IEXDataStreamChannels.MaximumSymbolsPerConnectionLimit;
 
             // Initiates the stream listener task.
             StreamAction();
@@ -216,6 +225,11 @@ namespace QuantConnect.IEX
                 {
                     throw new InvalidOperationException($"Invalid logic, SubscriptionManager tried to subscribe to existing symbol : {symbol.Value}");
                 }
+            }
+
+            if (_symbols.Count > maxAllowedSymbolLimit)
+            {
+                throw new ArgumentException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Symbol quantity exceeds allowed limit. Adjust amount or upgrade your pricing plan.");
             }
 
             Refresh();
