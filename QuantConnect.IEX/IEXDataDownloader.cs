@@ -24,9 +24,12 @@ namespace QuantConnect.IEX
     {
         private readonly IEXDataQueueHandler _handler;
 
+        private readonly MarketHoursDatabase _marketHoursDatabase;
+
         public IEXDataDownloader()
         {
             _handler = new IEXDataQueueHandler();
+            _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
         }
 
         public void Dispose()
@@ -64,14 +67,17 @@ namespace QuantConnect.IEX
                 yield break;
             }
 
+            var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+            var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
+
             var historyRequests = new[] {
                 new HistoryRequest(startUtc,
                                    endUtc,
                                    typeof(TradeBar),
                                    symbol,
-                                   resolution,
-                                   SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                                   TimeZones.NewYork,
+                                   resolution, 
+                                   exchangeHours,
+                                   dataTimeZone,
                                    resolution,
                                    true,
                                    false,

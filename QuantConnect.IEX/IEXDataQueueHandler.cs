@@ -571,6 +571,11 @@ namespace QuantConnect.IEX
                         period = TimeSpan.FromDays(1);
                     }
 
+                    if (date < start || date > end)
+                    {
+                        continue;
+                    }
+
                     Interlocked.Increment(ref _dataPointCount);
 
                     if (item["open"].Type == JTokenType.Null)

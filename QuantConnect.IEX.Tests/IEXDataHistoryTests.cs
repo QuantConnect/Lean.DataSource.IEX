@@ -30,6 +30,8 @@ namespace QuantConnect.IEX.Tests
     [TestFixture]
     public class IEXDataHistoryTests
     {
+        private static MarketHoursDatabase _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
+
         private IEXDataQueueHandler iexDataQueueHandler;
 
         [SetUp]
@@ -94,6 +96,32 @@ namespace QuantConnect.IEX.Tests
                     .SetDescription("Invalid security type - EURUSD symbol, Daily resolution.")
                     .SetCategory("Invalid");
             }
+        }
+
+        internal static IEnumerable<TestCaseData> SymbolDaysBeforeCaseData
+        {
+            get
+            {
+                yield return new TestCaseData(Symbols.SPY, 25);
+                yield return new TestCaseData(Symbols.SPY, 30);
+                yield return new TestCaseData(Symbols.SPY, 50);
+                yield return new TestCaseData(Symbols.SPY, 90);
+                yield return new TestCaseData(Symbols.SPY, 150);
+                yield return new TestCaseData(Symbols.SPY, 175);
+                yield return new TestCaseData(Symbols.SPY, 1826);
+                yield return new TestCaseData(Symbols.SPY, 1799);
+                yield return new TestCaseData(Symbols.SPY, 4383);
+                yield return new TestCaseData(Symbols.SPY, 7305);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(SymbolDaysBeforeCaseData))]
+        public void IEXCloudGetHistoryDailyForYears(Symbol symbol, int amountDaysBefore)
+        {
+            var slices = GetHistory(symbol, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(amountDaysBefore)).ToList();
+
+            Assert.IsNotNull(slices);
+            Assert.Greater(slices.Count, 1);
         }
 
         [Test, TestCaseSource(nameof(TestParameters))]
@@ -196,22 +224,27 @@ namespace QuantConnect.IEX.Tests
 
         internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            var now = DateTime.UtcNow;
+            var utcNow = DateTime.UtcNow;
 
             var dataType = LeanData.GetDataType(resolution, tickType);
 
-            return new HistoryRequest(now.Add(-period),
-                                       now,
-                                       dataType,
-                                       symbol,
-                                       resolution,
-                                       SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                                       TimeZones.NewYork,
-                                       resolution,
-                                       true,
-                                       false,
-                                       DataNormalizationMode.Raw,
-                                       tickType);
+            var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+            var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
+
+            return new HistoryRequest(
+                startTimeUtc: utcNow.Add(-period),
+                endTimeUtc: utcNow,
+                dataType: dataType,
+                symbol: symbol,
+                resolution: resolution,
+                exchangeHours: exchangeHours,
+                dataTimeZone: dataTimeZone,
+                fillForwardResolution: resolution,
+                includeExtendedMarketHours: true,
+                isCustomData: false,
+                DataNormalizationMode.Raw,
+                tickType: tickType
+                );
         }
     }
 }

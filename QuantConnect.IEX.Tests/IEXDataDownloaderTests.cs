@@ -54,5 +54,23 @@ namespace QuantConnect.IEX.Tests
                 IEXDataHistoryTests.AssertTradeBar(symbol, resolution, baseData);
             }
         }
+
+        private static IEnumerable<TestCaseData> SymbolDaysBeforeCaseData => IEXDataHistoryTests.SymbolDaysBeforeCaseData;
+
+        [Test, TestCaseSource(nameof(SymbolDaysBeforeCaseData))]
+        public void DownloadsHistoricalDataDailyForYears(Symbol symbol, int amountDaysBefore)
+        {
+            var resolution = Resolution.Daily;
+            var tickType = TickType.Trade;
+
+            var request = IEXDataHistoryTests.CreateHistoryRequest(symbol, resolution, tickType, TimeSpan.FromDays(amountDaysBefore));
+
+            var parameters = new DataDownloaderGetParameters(symbol, resolution, request.StartTimeUtc, request.EndTimeUtc, tickType);
+
+            var downloadResponse = _downloader.Get(parameters).ToList();
+
+            Assert.IsNotNull(downloadResponse);
+            Assert.Greater(downloadResponse.Count, 1);
+        }
     }
 }
