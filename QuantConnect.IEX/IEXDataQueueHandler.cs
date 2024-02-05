@@ -161,6 +161,8 @@ namespace QuantConnect.IEX
             _subscriptionManager.SubscribeImpl += Subscribe;
             _subscriptionManager.UnsubscribeImpl += Unsubscribe;
 
+            ValidateSubscription();
+
             // Set the sse-clients collection
             foreach (var channelName in IEXDataStreamChannels.Subscriptions)
             {
