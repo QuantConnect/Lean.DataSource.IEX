@@ -212,11 +212,6 @@ namespace QuantConnect.IEX
                     // Update subscription for each registered client
                     foreach (var client in _clients)
                     {
-                        //if (client.Exception)
-                        //{
-                        //    throw new Exception();
-                        //}
-
                         client.UpdateSubscription(subscribeSymbols);
                     }
                 }
