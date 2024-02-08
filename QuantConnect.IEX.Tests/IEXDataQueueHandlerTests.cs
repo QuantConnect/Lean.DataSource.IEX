@@ -25,6 +25,7 @@ using System.Threading.Tasks;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.IEX.Tests
 {
@@ -78,7 +79,10 @@ namespace QuantConnect.IEX.Tests
         [TearDown]
         public void TearDown()
         {
-            iexDataQueueHandler.Dispose();
+            if (iexDataQueueHandler != null)
+            {
+                iexDataQueueHandler.Dispose();
+            }
         }
 
         protected static IEnumerable<TestCaseData> TestCaseDataSymbolsConfigs
@@ -290,6 +294,29 @@ namespace QuantConnect.IEX.Tests
                 cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
             });
             Assert.Less(iexDataQueueHandler.maxAllowedSymbolLimit, symbolCounter);
+        }
+
+        [Test]
+        public void NotSubscribeOnUniverseSymbol()
+        {
+            var spy = Symbols.SPY;
+            var universeSymbol = UserDefinedUniverse.CreateSymbol(spy.SecurityType, spy.ID.Market);
+
+            foreach (var config in GetSubscriptionDataConfigs(universeSymbol, Resolution.Second))
+            {
+                Assert.IsNull(iexDataQueueHandler.Subscribe(config, (s, e) => { }));
+            }
+        }
+
+        [Test]
+        public void NotSubscribeOnCanonicalSymbol()
+        {
+            var spy = Symbols.SPY_Option_Chain;
+
+            foreach (var config in GetSubscriptionDataConfigs(spy, Resolution.Second))
+            {
+                Assert.IsNull(iexDataQueueHandler.Subscribe(config, (s, e) => { }));
+            }
         }
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
