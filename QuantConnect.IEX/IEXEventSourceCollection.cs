@@ -73,7 +73,7 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Occurs when the client returns an exception during the subscription process.
         /// </summary>
-        public event EventHandler SubscriptionFailure;
+        public event EventHandler<string> SubscriptionFailure;
 
         /// <summary>
         /// Creates a new instance of <see cref="IEXEventSourceCollection"/>
@@ -84,7 +84,7 @@ namespace QuantConnect.IEX
         /// <param name="rateGate">RateGate instance used to control the rate of certain operations.</param>
         /// <param name="subscriptionFailure">the event indicates a problem with the subscription process, either in the form of interruption or error.</param>
         public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName,
-            RateGate rateGate, EventHandler subscriptionFailure)
+            RateGate rateGate, EventHandler<string> subscriptionFailure)
         {
             _messageAction = messageAction;
             _apiKey = apiKey;
@@ -141,7 +141,7 @@ namespace QuantConnect.IEX
             // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
             {
-                SubscriptionFailure(_, EventArgs.Empty);
+                SubscriptionFailure(_, exceptionEventArgs.Exception.Message);
                 Log.Trace($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
             };
 

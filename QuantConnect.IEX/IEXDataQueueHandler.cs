@@ -144,7 +144,7 @@ namespace QuantConnect.IEX
         /// <value>
         ///   <c>true</c> if an error has occurred on the client side; otherwise, <c>false</c>.
         /// </value>
-        public bool IsErrorClientHappen { get; private set; }
+        public (bool, string) IsErrorClientHappen { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
@@ -179,7 +179,7 @@ namespace QuantConnect.IEX
                     _apiKey,
                     channelName,
                     _rateGate,
-                    (_, _) => IsErrorClientHappen = true));
+                    (_, errorMessage) => IsErrorClientHappen = (true, errorMessage)));
             }
 
             // Calculate the maximum allowed symbol limit based on the IEX price plan's client capacity.

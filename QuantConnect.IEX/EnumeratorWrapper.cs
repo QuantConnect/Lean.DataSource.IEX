@@ -26,7 +26,7 @@ namespace QuantConnect.IEX
     {
         private readonly IEnumerator<BaseData> _underlying;
 
-        private Func<bool> _subscriptionInterruptionCheck;
+        private Func<(bool isFailed, string errorMessage)> _subscriptionInterruptionCheck;
 
         /// <inheritdoc/>
         public BaseData Current => _underlying.Current;
@@ -39,7 +39,7 @@ namespace QuantConnect.IEX
         /// </summary>
         /// <param name="underlying">The underlying enumerator to wrap.</param>
         /// <param name="subscriptionInterruptionCheck">A function delegate that checks for subscription interruption.</param>
-        public EnumeratorWrapper(IEnumerator<BaseData> underlying, Func<bool> subscriptionInterruptionCheck)
+        public EnumeratorWrapper(IEnumerator<BaseData> underlying, Func<(bool, string)> subscriptionInterruptionCheck)
         {
             _underlying = underlying;
             _subscriptionInterruptionCheck = subscriptionInterruptionCheck;
@@ -54,9 +54,10 @@ namespace QuantConnect.IEX
         /// <inheritdoc/>
         public bool MoveNext()
         {
-            if (_subscriptionInterruptionCheck())
+            if (_subscriptionInterruptionCheck().isFailed)
             {
-                throw new Exception($"The Subscription process was interrupted or encountered an error. Unable to proceed");
+                throw new Exception($"The subscription process was interrupted or encountered an error. Details: {_subscriptionInterruptionCheck().errorMessage}." +
+                    $"For more information, refer to the documentation: https://iexcloud.io/docs/api-basics/error-codes");
             }
 
             return _underlying.MoveNext();
