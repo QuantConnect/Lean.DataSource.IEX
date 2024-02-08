@@ -212,6 +212,11 @@ namespace QuantConnect.IEX
                     // Update subscription for each registered client
                     foreach (var client in _clients)
                     {
+                        //if (client.Exception)
+                        //{
+                        //    throw new Exception();
+                        //}
+
                         client.UpdateSubscription(subscribeSymbols);
                     }
                 }
@@ -385,7 +390,7 @@ namespace QuantConnect.IEX
         {
             return
                 symbol.Value.IndexOfInvariant("universe", true) == -1 &&
-                symbol.IsCanonical() &&
+                !symbol.IsCanonical() &&
                 symbol.SecurityType == SecurityType.Equity;
         }
 
