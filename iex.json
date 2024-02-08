@@ -1,5 +1,5 @@
 {
-    "description": "IEX Cloud is a high quality streaming data marketplace with integrations to market prices, news, and corporate action events.",
+    "description": "IEX Cloud is a high-quality streaming data marketplace with integrations to market prices, news, and corporate action events.",
     "platforms-features": [
         {
             "Platform Support": ["Cloud Platform", "Local Platform", "LEAN CLI"],
@@ -10,5 +10,6 @@
         }
     ],
     "data-supported": [ "Equity" ], 
+    "documentation": "/docs/v2/lean-cli/datasets/iex-cloud",
     "more-information": "https://iexcloud.io/"
 }
