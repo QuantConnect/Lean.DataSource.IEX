@@ -383,7 +383,10 @@ namespace QuantConnect.IEX
         /// <returns>returns true if brokerage supports the specified symbol; otherwise false</returns>
         private static bool CanSubscribe(Symbol symbol)
         {
-            return symbol.SecurityType == SecurityType.Equity;
+            return
+                symbol.Value.IndexOfInvariant("universe", true) == -1 &&
+                !symbol.IsCanonical() &&
+                symbol.SecurityType == SecurityType.Equity;
         }
 
         /// <summary>
