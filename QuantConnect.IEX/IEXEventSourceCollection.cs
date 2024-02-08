@@ -71,20 +71,27 @@ namespace QuantConnect.IEX
         public readonly string dataStreamChannelName;
 
         /// <summary>
+        /// Occurs when the client returns an exception during the subscription process.
+        /// </summary>
+        public event EventHandler SubscriptionFailure;
+
+        /// <summary>
         /// Creates a new instance of <see cref="IEXEventSourceCollection"/>
         /// </summary>
         /// <param name="messageAction">Message Event handler by channel name.</param>
         /// <param name="apiKey">The Api-key of IEX cloud platform</param>
         /// <param name="subscriptionChannelName">The name of channel to subscription in current instance of <see cref="IEXEventSourceCollection"/></param>
         /// <param name="rateGate">RateGate instance used to control the rate of certain operations.</param>
+        /// <param name="subscriptionFailure">the event indicates a problem with the subscription process, either in the form of interruption or error.</param>
         public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName,
-            RateGate rateGate)
+            RateGate rateGate, EventHandler subscriptionFailure)
         {
             _messageAction = messageAction;
             _apiKey = apiKey;
             dataStreamChannelName = subscriptionChannelName;
             dataStreamSubscriptionUrl = IEXDataStreamChannels.BaseDataStreamUrl + subscriptionChannelName;
             _rateGate = rateGate;
+            SubscriptionFailure = subscriptionFailure;
         }
 
         /// <summary>
@@ -133,7 +140,10 @@ namespace QuantConnect.IEX
 
             // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
+            {
+                SubscriptionFailure(_, EventArgs.Empty);
                 Log.Trace($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
+            };
 
             client.Closed += (_, __) =>
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Closed: The event source client has been closed. Initiating cleanup and closing procedures.");

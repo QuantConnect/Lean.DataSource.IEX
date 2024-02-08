@@ -139,6 +139,14 @@ namespace QuantConnect.IEX
         public readonly int maxAllowedSymbolLimit;
 
         /// <summary>
+        /// Gets a value indicating whether an error has occurred on the client side. <see cref="IEXEventSourceCollection"/>
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if an error has occurred on the client side; otherwise, <c>false</c>.
+        /// </value>
+        public bool IsErrorClientHappen { get; private set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
         /// </summary>
         public IEXDataQueueHandler()
@@ -170,7 +178,8 @@ namespace QuantConnect.IEX
                     (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
                     _apiKey,
                     channelName,
-                    _rateGate));
+                    _rateGate,
+                    (_, _) => IsErrorClientHappen = true));
             }
 
             // Calculate the maximum allowed symbol limit based on the IEX price plan's client capacity.
@@ -365,7 +374,7 @@ namespace QuantConnect.IEX
             var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
             _subscriptionManager.Subscribe(dataConfig);
 
-            return enumerator;
+            return new EnumeratorWrapper(enumerator, () => IsErrorClientHappen);
         }
 
         /// <summary>
