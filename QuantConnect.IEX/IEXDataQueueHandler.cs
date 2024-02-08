@@ -229,11 +229,6 @@ namespace QuantConnect.IEX
                 }
             }
 
-            if (_symbols.Count > maxAllowedSymbolLimit)
-            {
-                throw new ArgumentException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Symbol quantity exceeds allowed limit. Adjust amount or upgrade your pricing plan.");
-            }
-
             Refresh();
             return true;
         }
@@ -360,6 +355,11 @@ namespace QuantConnect.IEX
             if (!CanSubscribe(dataConfig.Symbol))
             {
                 return null;
+            }
+
+            if (_symbols.Count > maxAllowedSymbolLimit)
+            {
+                throw new ArgumentException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Symbol quantity exceeds allowed limit. Adjust amount or upgrade your pricing plan. Unfortunately, your current plan only allows for {maxAllowedSymbolLimit} symbols.");
             }
 
             var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
