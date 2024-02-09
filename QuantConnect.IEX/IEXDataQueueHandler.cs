@@ -128,6 +128,11 @@ namespace QuantConnect.IEX
         };
 
         /// <summary>
+        /// Indicates if data transmission is limited to the extended market hours range (4am-8am).
+        /// </summary>
+        private bool _extendedMarketHoursWarningFired;
+
+        /// <summary>
         /// Returns whether the data provider is connected
         /// True if the data provider is connected
         /// </summary>
@@ -359,11 +364,11 @@ namespace QuantConnect.IEX
         /// <returns>The new enumerator for this subscription request</returns>
         public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (dataConfig.ExtendedMarketHours)
+            if (!_extendedMarketHoursWarningFired)
             {
-                throw new InvalidOperationException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: " +
-                    $"Algorithm Subscription Error - Extended market hours not supported. " +
+                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Algorithm Subscription Error - Extended market hours not supported." +
                     $"Subscribe during regular hours for optimal performance.");
+                _extendedMarketHoursWarningFired = true;
             }
 
             if (!CanSubscribe(dataConfig.Symbol))
