@@ -30,10 +30,12 @@ namespace QuantConnect.IEX.Tests
             _downloader = new IEXDataDownloader();
         }
 
-        private static IEnumerable<TestCaseData> HistoricalDataTestCases => IEXDataHistoryTests.TestParameters;
+        private static IEnumerable<TestCaseData> HistoricalValidDataTestCases => IEXDataHistoryTests.ValidDataTestParameters;
+        private static IEnumerable<TestCaseData> HistoricalInvalidDataTestCases => IEXDataHistoryTests.InvalidDataTestParameters;
 
-        [TestCaseSource(nameof(HistoricalDataTestCases))]
-        public void DownloadsHistoricalData(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period, bool isEmptyResult)
+
+        [TestCaseSource(nameof(HistoricalInvalidDataTestCases))]
+        public void DownloadsHistoricalDataWithInvalidDataTestParameters(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
             var request = IEXDataHistoryTests.CreateHistoryRequest(symbol, resolution, tickType, period);
 
@@ -41,11 +43,18 @@ namespace QuantConnect.IEX.Tests
 
             var downloadResponse = _downloader.Get(parameters).ToList();
 
-            if (!isEmptyResult)
-            {
-                Assert.IsEmpty(downloadResponse);
-                return;
-            }
+            Assert.IsEmpty(downloadResponse);
+        }
+
+        [Explicit("This tests require a iexcloud.io api key")]
+        [TestCaseSource(nameof(HistoricalValidDataTestCases))]
+        public void DownloadsHistoricalDataWithValidDataTestParameters(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
+        {
+            var request = IEXDataHistoryTests.CreateHistoryRequest(symbol, resolution, tickType, period);
+
+            var parameters = new DataDownloaderGetParameters(symbol, resolution, request.StartTimeUtc, request.EndTimeUtc, tickType);
+
+            var downloadResponse = _downloader.Get(parameters).ToList();
 
             Assert.IsNotEmpty(downloadResponse);
 
@@ -57,6 +66,7 @@ namespace QuantConnect.IEX.Tests
 
         private static IEnumerable<TestCaseData> SymbolDaysBeforeCaseData => IEXDataHistoryTests.SymbolDaysBeforeCaseData;
 
+        [Explicit("This tests require a iexcloud.io api key")]
         [Test, TestCaseSource(nameof(SymbolDaysBeforeCaseData))]
         public void DownloadsHistoricalDataDailyForYears(Symbol symbol, int amountDaysBefore)
         {

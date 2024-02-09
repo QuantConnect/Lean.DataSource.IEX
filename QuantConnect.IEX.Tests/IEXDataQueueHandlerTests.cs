@@ -29,7 +29,7 @@ using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.IEX.Tests
 {
-    [TestFixture]
+    [TestFixture, Explicit("This tests require a iexcloud.io api key")]
     public class IEXDataQueueHandlerTests
     {
         private IEXDataQueueHandler iexDataQueueHandler;
@@ -258,7 +258,7 @@ namespace QuantConnect.IEX.Tests
             Thread.Sleep(20000);
         }
 
-        [Test, Explicit("Tests are dependent on network and are long")]
+        [Test]
         public void IEXCouldSubscribeMoreThan100Symbols()
         {
             var cancellationTokenSource = new CancellationTokenSource();
