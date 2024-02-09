@@ -23,6 +23,7 @@ using QuantConnect.Logging;
 using Microsoft.CodeAnalysis;
 using System.Threading.Tasks;
 using QuantConnect.Data.Market;
+using QuantConnect.Configuration;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Data.UniverseSelection;
@@ -32,6 +33,7 @@ namespace QuantConnect.IEX.Tests
     [TestFixture, Explicit("This tests require a iexcloud.io api key")]
     public class IEXDataQueueHandlerTests
     {
+        private CancellationTokenSource _cancellationTokenSource;
         private IEXDataQueueHandler iexDataQueueHandler;
 
         private static readonly string[] HardCodedSymbolsSNP = {
@@ -73,6 +75,7 @@ namespace QuantConnect.IEX.Tests
         [SetUp]
         public void SetUp()
         {
+            _cancellationTokenSource = new();
             iexDataQueueHandler = new IEXDataQueueHandler();
         }
 
@@ -83,6 +86,8 @@ namespace QuantConnect.IEX.Tests
             {
                 iexDataQueueHandler.Dispose();
             }
+
+            _cancellationTokenSource.Dispose();
         }
 
         protected static IEnumerable<TestCaseData> TestCaseDataSymbolsConfigs
@@ -142,17 +147,18 @@ namespace QuantConnect.IEX.Tests
 
                             ticks.Add(tick);
                         }
-                    });
+                    },
+                    () => _cancellationTokenSource.Cancel());
             }
 
-            Thread.Sleep(20_000);
+            Assert.IsFalse(_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20)), "The cancellation token was cancelled block thread.");
 
             foreach (var config in configs)
             {
                 iexDataQueueHandler.Unsubscribe(config);
             }
 
-            Thread.Sleep(20000);
+            _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
 
             Assert.Greater(ticks.Count, 0);
         }
@@ -160,7 +166,6 @@ namespace QuantConnect.IEX.Tests
         [TestCaseSource(nameof(TestCaseDataSymbolsConfigs))]
         public void IEXSubscribeToSeveralThenUnSubscribeExceptOne(Queue<SubscriptionDataConfig> configs)
         {
-            var cancellationTokenSource = new CancellationTokenSource();
             var resetEvent = new ManualResetEvent(false);
 
             var tempDictionary = new ConcurrentDictionary<Symbol, int>();
@@ -186,10 +191,11 @@ namespace QuantConnect.IEX.Tests
                                 resetEvent.Set();
                             }
                         }
-                    });
+                    },
+                    () => _cancellationTokenSource.Cancel());
             }
 
-            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancellationTokenSource.Token));
+            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token));
 
             // Unsubscribe from all symbols except one. (Why 2, cuz we have subscribe on Quote And Trade)
             for (int i = configs.Count; i > 2; i--)
@@ -205,7 +211,7 @@ namespace QuantConnect.IEX.Tests
             resetEvent.Reset();
             tempDictionary = new ConcurrentDictionary<Symbol, int>();
 
-            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancellationTokenSource.Token));
+            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token));
 
             for (int i = configs.Count; i > 0; i--)
             {
@@ -214,7 +220,7 @@ namespace QuantConnect.IEX.Tests
             }
 
             Thread.Sleep(TimeSpan.FromSeconds(1));
-            cancellationTokenSource.Cancel();
+            _cancellationTokenSource.Cancel();
         }
 
         [Test]
@@ -234,6 +240,11 @@ namespace QuantConnect.IEX.Tests
                 }
             };
 
+            Action throwExceptionCallback = () =>
+            {
+                _cancellationTokenSource.Cancel();
+            };
+ 
             var configs = new[] {
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("MBLY", SecurityType.Equity, Market.USA), Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("USO", SecurityType.Equity, Market.USA), Resolution.Second)
@@ -243,36 +254,36 @@ namespace QuantConnect.IEX.Tests
             {
                 ProcessFeed(
                     iexDataQueueHandler.Subscribe(c, (s, e) => { }),
-                    callback);
+                    callback,
+                    throwExceptionCallback);
             });
 
-            Thread.Sleep(20000);
+            Assert.IsFalse(_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20)), "The cancellation token was cancelled block thread.");
 
             iexDataQueueHandler.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
 
             Log.Trace("Unsubscribing");
-            Thread.Sleep(2000);
+            _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(2));
             // some messages could be inflight, but after a pause all MBLY messages must have beed consumed by ProcessFeed
             unsubscribed = true;
 
-            Thread.Sleep(20000);
+            _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
         }
 
         [Test]
         public void IEXCouldSubscribeMoreThan100Symbols()
         {
-            var cancellationTokenSource = new CancellationTokenSource();
             var resetEvent = new AutoResetEvent(false);
 
             foreach (var ticker in HardCodedSymbolsSNP.Take(250))
             {
                 foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
                 {
-                    iexDataQueueHandler.Subscribe(config, (s, e) => { });
+                    ProcessFeed(iexDataQueueHandler.Subscribe(config, (s, e) => { }), throwExceptionCallback: () => _cancellationTokenSource.Cancel());
                 }
             }
 
-            resetEvent.WaitOne(TimeSpan.FromMinutes(2), cancellationTokenSource.Token);
+            Assert.IsFalse(resetEvent.WaitOne(TimeSpan.FromMinutes(2), _cancellationTokenSource.Token), "The cancellation token was cancelled block thread.");
             Assert.IsTrue(iexDataQueueHandler.IsConnected);
         }
 
@@ -319,7 +330,37 @@ namespace QuantConnect.IEX.Tests
             }
         }
 
-        private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null)
+        [Test]
+        public void SubscribeWithWrongApiKeyThrowException()
+        {
+            Config.Set("iex-cloud-api-key", "wrong-api-key");
+
+            var isSubscribeThrowException = false;
+
+            var iexDataQueueHandler = new IEXDataQueueHandler();
+
+            foreach (var config in GetSubscriptionDataConfigs(Symbols.SPY, Resolution.Second))
+            {
+                ProcessFeed(
+                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    tick =>
+                    {
+                        if (tick != null) 
+                        {
+                            Log.Debug($"{nameof(IEXDataQueueHandlerTests)}: tick: {tick}");
+                        }
+                    }, 
+                    () => {
+                        isSubscribeThrowException = true;
+                        _cancellationTokenSource.Cancel();
+                    });
+            }
+
+            _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
+            Assert.IsTrue(isSubscribeThrowException);
+        }
+
+        private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null, Action throwExceptionCallback = null)
         {
             Task.Factory.StartNew(() =>
             {
@@ -339,9 +380,16 @@ namespace QuantConnect.IEX.Tests
                 }
                 catch (Exception err)
                 {
-                    Log.Error(err.Message);
+                    throw;
                 }
-            });
+            }).ContinueWith(task =>
+            {
+                if (throwExceptionCallback != null)
+                { 
+                    throwExceptionCallback();
+                }
+                Log.Error("The throwExceptionCallback is null.");
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
