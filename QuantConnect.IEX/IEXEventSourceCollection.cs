@@ -53,12 +53,17 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Represents an AutoResetEvent used for synchronizing the context, waiting for the client to be open and successfully subscribed.
         /// </summary>
-        public AutoResetEvent _subscriptionSyncEvent = new(false);
+        private AutoResetEvent _subscriptionSyncEvent = new(false);
 
         /// <summary>
         /// Represents a RateGate instance used to control the rate of certain operations.
         /// </summary>
         private readonly RateGate _rateGate;
+
+        /// <summary>
+        /// Occurs when the client returns an exception during the subscription process.
+        /// </summary>
+        private event EventHandler<string> SubscriptionFailure;
 
         /// <summary>
         /// Indicates whether a client is connected - i.e delivers any data.
@@ -77,14 +82,16 @@ namespace QuantConnect.IEX
         /// <param name="apiKey">The Api-key of IEX cloud platform</param>
         /// <param name="subscriptionChannelName">The name of channel to subscription in current instance of <see cref="IEXEventSourceCollection"/></param>
         /// <param name="rateGate">RateGate instance used to control the rate of certain operations.</param>
+        /// <param name="subscriptionFailure">the event indicates a problem with the subscription process, either in the form of interruption or error.</param>
         public IEXEventSourceCollection(EventHandler<(MessageReceivedEventArgs, string)> messageAction, string apiKey, string subscriptionChannelName,
-            RateGate rateGate)
+            RateGate rateGate, EventHandler<string> subscriptionFailure)
         {
             _messageAction = messageAction;
             _apiKey = apiKey;
             dataStreamChannelName = subscriptionChannelName;
             dataStreamSubscriptionUrl = IEXDataStreamChannels.BaseDataStreamUrl + subscriptionChannelName;
             _rateGate = rateGate;
+            SubscriptionFailure = subscriptionFailure;
         }
 
         /// <summary>
@@ -133,7 +140,10 @@ namespace QuantConnect.IEX
 
             // Error Codes dock: https://iexcloud.io/docs/api-basics/error-codes
             client.Error += (_, exceptionEventArgs) =>
+            {
+                SubscriptionFailure(_, exceptionEventArgs.Exception.Message);
                 Log.Trace($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Error: EventSource encountered an error. Details: {exceptionEventArgs.Exception.Message}");
+            };
 
             client.Closed += (_, __) =>
                 Log.Debug($"{nameof(IEXEventSourceCollection)}.{nameof(CreateNewSubscription)}.Event.Closed: The event source client has been closed. Initiating cleanup and closing procedures.");

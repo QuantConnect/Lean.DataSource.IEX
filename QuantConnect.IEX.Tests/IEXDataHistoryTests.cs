@@ -52,47 +52,53 @@ namespace QuantConnect.IEX.Tests
         /// <remarks>
         /// The test parameters include valid and invalid combinations of input data.
         /// </remarks>
-        internal static IEnumerable<TestCaseData> TestParameters
+        internal static IEnumerable<TestCaseData> ValidDataTestParameters
         {
             get
             {
                 // Valid parameters
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15))
                     .SetDescription("Valid parameters - Daily resolution, 15 days period.")
                     .SetCategory("Valid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(5), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(5))
                     .SetDescription("Valid parameters - Minute resolution, 5 days period.")
                     .SetCategory("Valid");
-
-                // Invalid resolution - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Tick, TickType.Trade, TimeSpan.FromSeconds(15), false)
-                    .SetDescription("Invalid resolution - Tick resolution, 15 seconds period.")
-                    .SetCategory("Invalid");
-
-                yield return new TestCaseData(Symbols.SPY, Resolution.Second, TickType.Trade, Time.OneMinute, false)
-                    .SetDescription("Invalid resolution - Second resolution, 1 minute period.")
-                    .SetCategory("Invalid");
-
-                yield return new TestCaseData(Symbols.SPY, Resolution.Hour, TickType.Trade, Time.OneDay, false)
-                    .SetDescription("Invalid resolution - Hour resolution, 1 day period.")
-                    .SetCategory("Invalid");
 
                 yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), true)
                     .SetDescription("Valid parameters - Beyond 45 days, Minute resolution.")
                     .SetCategory("Valid");
+            }
+        }
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(-15), false)
+        internal static IEnumerable<TestCaseData> InvalidDataTestParameters
+        {
+            get
+            {
+                // Invalid resolution - empty result
+                yield return new TestCaseData(Symbols.SPY, Resolution.Tick, TickType.Trade, TimeSpan.FromSeconds(15))
+                    .SetDescription("Invalid resolution - Tick resolution, 15 seconds period.")
+                    .SetCategory("Invalid");
+
+                yield return new TestCaseData(Symbols.SPY, Resolution.Second, TickType.Trade, Time.OneMinute)
+                    .SetDescription("Invalid resolution - Second resolution, 1 minute period.")
+                    .SetCategory("Invalid");
+
+                yield return new TestCaseData(Symbols.SPY, Resolution.Hour, TickType.Trade, Time.OneDay)
+                    .SetDescription("Invalid resolution - Hour resolution, 1 day period.")
+                    .SetCategory("Invalid");
+
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(-15))
                     .SetDescription("Invalid period - Date in the future, Daily resolution.")
                     .SetCategory("Invalid");
 
                 // Invalid data type - empty result
-                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Quote, TimeSpan.FromDays(15), false)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Daily, TickType.Quote, TimeSpan.FromDays(15))
                     .SetDescription("Invalid data type - Daily resolution, QuoteBar data type.")
                     .SetCategory("Invalid");
 
                 // Invalid security type, no exception, empty result
-                yield return new TestCaseData(Symbols.EURUSD, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15), false)
+                yield return new TestCaseData(Symbols.EURUSD, Resolution.Daily, TickType.Trade, TimeSpan.FromDays(15))
                     .SetDescription("Invalid security type - EURUSD symbol, Daily resolution.")
                     .SetCategory("Invalid");
             }
@@ -115,6 +121,7 @@ namespace QuantConnect.IEX.Tests
             }
         }
 
+        [Explicit("This tests require a iexcloud.io api key")]
         [Test, TestCaseSource(nameof(SymbolDaysBeforeCaseData))]
         public void IEXCloudGetHistoryDailyForYears(Symbol symbol, int amountDaysBefore)
         {
@@ -124,16 +131,20 @@ namespace QuantConnect.IEX.Tests
             Assert.Greater(slices.Count, 1);
         }
 
-        [Test, TestCaseSource(nameof(TestParameters))]
-        public void IEXCouldGetHistory(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period, bool received)
+        [Test, TestCaseSource(nameof(InvalidDataTestParameters))]
+        public void IEXCloudGetHistoryWithInvalidDataTestParameters(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
             var slices = GetHistory(symbol, resolution, tickType, period);
 
-            if (!received)
-            {
-                Assert.IsEmpty(slices);
-                return;
-            }
+            Assert.IsEmpty(slices);
+            return;
+        }
+
+        [Explicit("This tests require a iexcloud.io api key")]
+        [Test, TestCaseSource(nameof(ValidDataTestParameters))]
+        public void IEXCloudGetHistoryWithValidDataTestParameters(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
+        {
+            var slices = GetHistory(symbol, resolution, tickType, period);
 
             Assert.IsNotEmpty(slices);
 
@@ -189,6 +200,7 @@ namespace QuantConnect.IEX.Tests
             Assert.Throws<ArgumentException>(() => GetHistory(symbol, resolution, tickType, period));
         }
 
+        [Explicit("This tests require a iexcloud.io api key")]
         [TestCase(10)]
         [TestCase(20)]
         public void GetHistoryReturnsValidDataForMultipleConcurrentRequests(int amountOfTask)
