@@ -144,7 +144,7 @@ namespace QuantConnect.IEX
         /// <value>
         ///   <c>true</c> if an error has occurred on the client side; otherwise, <c>false</c>.
         /// </value>
-        public (bool, string) IsErrorClientHappen { get; private set; }
+        private (bool, string) IsErrorClientHappen { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.

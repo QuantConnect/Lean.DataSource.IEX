@@ -53,12 +53,17 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Represents an AutoResetEvent used for synchronizing the context, waiting for the client to be open and successfully subscribed.
         /// </summary>
-        public AutoResetEvent _subscriptionSyncEvent = new(false);
+        private AutoResetEvent _subscriptionSyncEvent = new(false);
 
         /// <summary>
         /// Represents a RateGate instance used to control the rate of certain operations.
         /// </summary>
         private readonly RateGate _rateGate;
+
+        /// <summary>
+        /// Occurs when the client returns an exception during the subscription process.
+        /// </summary>
+        private event EventHandler<string> SubscriptionFailure;
 
         /// <summary>
         /// Indicates whether a client is connected - i.e delivers any data.
@@ -69,11 +74,6 @@ namespace QuantConnect.IEX
         /// The specific channel name for current instance of <see cref="IEXEventSourceCollection"/>
         /// </summary>
         public readonly string dataStreamChannelName;
-
-        /// <summary>
-        /// Occurs when the client returns an exception during the subscription process.
-        /// </summary>
-        public event EventHandler<string> SubscriptionFailure;
 
         /// <summary>
         /// Creates a new instance of <see cref="IEXEventSourceCollection"/>
