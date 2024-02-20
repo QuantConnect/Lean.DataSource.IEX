@@ -168,7 +168,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                 return;
             }
 
-            if (!Config.TryGetValue("iex-price-plan", "Grow", out var plan) || string.IsNullOrEmpty(plan))
+            if (!Config.TryGetValue<string>("iex-price-plan", out var plan) || string.IsNullOrEmpty(plan))
             {
                 plan = "Grow";
             }
