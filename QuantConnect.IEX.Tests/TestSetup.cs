@@ -20,7 +20,7 @@ using System.Collections;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
 
-namespace QuantConnect.IEX.Tests
+namespace QuantConnect.Lean.DataSource.IEX.Tests
 {
     [SetUpFixture]
     public class TestSetup

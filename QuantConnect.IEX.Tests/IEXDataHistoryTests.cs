@@ -25,25 +25,25 @@ using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 
-namespace QuantConnect.IEX.Tests
+namespace QuantConnect.Lean.DataSource.IEX.Tests
 {
     [TestFixture]
     public class IEXDataHistoryTests
     {
         private static MarketHoursDatabase _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
-        private IEXDataQueueHandler iexDataQueueHandler;
+        private IEXDataProvider iexDataProvider;
 
         [SetUp]
         public void SetUp()
         {
-            iexDataQueueHandler = new IEXDataQueueHandler();
+            iexDataProvider = new IEXDataProvider();
         }
 
         [TearDown]
         public void TearDown()
         {
-            iexDataQueueHandler.Dispose();
+            iexDataProvider.Dispose();
         }
 
         /// <summary>
@@ -228,8 +228,8 @@ namespace QuantConnect.IEX.Tests
         {
             var requests = new[] { CreateHistoryRequest(symbol, resolution, tickType, period) };
 
-            var slices = iexDataQueueHandler.GetHistory(requests, TimeZones.Utc).ToArray();
-            Log.Trace("Data points retrieved: " + iexDataQueueHandler.DataPointCount);
+            var slices = iexDataProvider.GetHistory(requests, TimeZones.Utc).ToArray();
+            Log.Trace("Data points retrieved: " + iexDataProvider.DataPointCount);
             Log.Trace("tick Type: " + tickType);
             return slices;
         }

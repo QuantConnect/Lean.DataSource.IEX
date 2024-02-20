@@ -18,7 +18,7 @@ using System.Linq;
 using NUnit.Framework;
 using System.Collections.Generic;
 
-namespace QuantConnect.IEX.Tests
+namespace QuantConnect.Lean.DataSource.IEX.Tests
 {
     public class IEXDataDownloaderTests
     {

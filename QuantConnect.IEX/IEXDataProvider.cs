@@ -25,27 +25,27 @@ using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using System.Globalization;
-using QuantConnect.IEX.Enums;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
-using QuantConnect.IEX.Response;
 using QuantConnect.Configuration;
-using QuantConnect.IEX.Constants;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Lean.DataSource.IEX.Enums;
 using QuantConnect.Lean.Engine.HistoricalData;
+using QuantConnect.Lean.DataSource.IEX.Response;
+using QuantConnect.Lean.DataSource.IEX.Constants;
 
-namespace QuantConnect.IEX
+namespace QuantConnect.Lean.DataSource.IEX
 {
     /// <summary>
     /// IEX live data handler.
     /// See more at https://iexcloud.io/docs/api/
     /// </summary>
-    public class IEXDataQueueHandler : SynchronizingHistoryProvider, IDataQueueHandler
+    public class IEXDataProvider : SynchronizingHistoryProvider, IDataQueueHandler
     {
         /// <summary>
         /// The base URL for the deprecated IEX Cloud API, used to retrieve adjusted and unadjusted historical data.
@@ -157,9 +157,9 @@ namespace QuantConnect.IEX
         private bool _initialized;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
+        /// Initializes a new instance of the <see cref="IEXDataProvider"/> class.
         /// </summary>
-        public IEXDataQueueHandler()
+        public IEXDataProvider()
         {
             if (!Config.TryGetValue<string>("iex-cloud-api-key", out var configApiKey) || string.IsNullOrEmpty(configApiKey))
             {
@@ -209,7 +209,7 @@ namespace QuantConnect.IEX
                         client.UpdateSubscription(subscribeSymbols);
                     }
                 }
-                Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(StreamAction)}: End");
+                Log.Debug($"{nameof(IEXDataProvider)}.{nameof(StreamAction)}: End");
             }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
@@ -225,7 +225,7 @@ namespace QuantConnect.IEX
 
             if (_symbols.Count > maxAllowedSymbolLimit)
             {
-                throw new ArgumentException($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Symbol quantity exceeds allowed limit. Adjust amount or upgrade your pricing plan.");
+                throw new ArgumentException($"{nameof(IEXDataProvider)}.{nameof(Subscribe)}: Symbol quantity exceeds allowed limit. Adjust amount or upgrade your pricing plan.");
             }
 
             Refresh();
@@ -251,7 +251,7 @@ namespace QuantConnect.IEX
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ProcessJsonObject(string json, string channelName)
         {
-            // Log.Debug($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessJsonObject)}: Channel:{channelName}, Data:{json}");
+            // Log.Debug($"{nameof(IEXDataProvider)}.{nameof(ProcessJsonObject)}: Channel:{channelName}, Data:{json}");
 
             if (json == "[]")
             {
@@ -346,7 +346,7 @@ namespace QuantConnect.IEX
         {
             if (!_extendedMarketHoursWarningFired)
             {
-                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(Subscribe)}: Algorithm Subscription Error - Extended market hours not supported." +
+                Log.Error($"{nameof(IEXDataProvider)}.{nameof(Subscribe)}: Algorithm Subscription Error - Extended market hours not supported." +
                     $"Subscribe during regular hours for optimal performance.");
                 _extendedMarketHoursWarningFired = true;
             }
@@ -461,7 +461,7 @@ namespace QuantConnect.IEX
                 client.Dispose();
             }
 
-            Log.Trace("IEXDataQueueHandler.Dispose(): Disconnected from IEX data provider");
+            Log.Trace("IEXDataProvider.Dispose(): Disconnected from IEX data provider");
         }
 
         #region IHistoryProvider implementation
@@ -496,7 +496,7 @@ namespace QuantConnect.IEX
                 {
                     if (!_invalidHistoryDataTypeWarningFired)
                     {
-                        Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
+                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
                             "Currently available support only for historical of type - TradeBar");
                         _invalidHistoryDataTypeWarningFired = true;
                     }
@@ -505,13 +505,13 @@ namespace QuantConnect.IEX
 
                 if (request.Symbol.SecurityType != SecurityType.Equity)
                 {
-                    Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                    Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
                     return Enumerable.Empty<Slice>();
                 }
 
                 if (request.StartTimeUtc >= request.EndTimeUtc)
                 {
-                    Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
                     return Enumerable.Empty<Slice>();
                 }
 
@@ -534,11 +534,11 @@ namespace QuantConnect.IEX
 
             if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
             {
-                Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX only support daily & minute resolution.");
+                Log.Error("IEXDataProvider.GetHistory(): History calls for IEX only support daily & minute resolution.");
                 yield break;
             }
 
-            Log.Trace($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
+            Log.Trace($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
 
             var span = end - start;
             var urls = new List<string>();
@@ -680,7 +680,7 @@ namespace QuantConnect.IEX
 
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
-                    throw new Exception($"{nameof(IEXDataQueueHandler)}.{nameof(ProcessHistoryRequests)} failed: [{(int)response.StatusCode}] {response.StatusDescription}, Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
+                    throw new Exception($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)} failed: [{(int)response.StatusCode}] {response.StatusDescription}, Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
                 }
 
                 return response.Content;
@@ -852,7 +852,7 @@ namespace QuantConnect.IEX
             }
             catch (Exception e)
             {
-                Log.Error($"{nameof(IEXDataQueueHandler)}.{nameof(ValidateSubscription)}: Failed during validation, shutting down. Error : {e.Message}");
+                Log.Error($"{nameof(IEXDataProvider)}.{nameof(ValidateSubscription)}: Failed during validation, shutting down. Error : {e.Message}");
                 throw;
             }
         }

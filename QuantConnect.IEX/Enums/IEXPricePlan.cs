@@ -13,7 +13,7 @@
  * limitations under the License.
 */
 
-namespace QuantConnect.IEX.Enums
+namespace QuantConnect.Lean.DataSource.IEX.Enums
 {
     /// <summary>
     /// Enum representing different IEX cloud Price Plans.

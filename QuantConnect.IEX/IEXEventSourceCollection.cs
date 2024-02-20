@@ -16,10 +16,10 @@
 using QuantConnect.Util;
 using QuantConnect.Logging;
 using LaunchDarkly.EventSource;
-using QuantConnect.IEX.Constants;
 using System.Collections.Concurrent;
+using QuantConnect.Lean.DataSource.IEX.Constants;
 
-namespace QuantConnect.IEX
+namespace QuantConnect.Lean.DataSource.IEX
 {
     /// <summary>
     /// Class wraps a collection of clients for getting data on SSE.
