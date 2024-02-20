@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.002.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.IEX.Tests", "QuantConnect.IEX.Tests\QuantConnect.IEX.Tests.csproj", "{38BD8123-9838-4984-A4D1-B8D1062197B4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.DataSource.IEX.Tests", "QuantConnect.IEX.Tests\QuantConnect.DataSource.IEX.Tests.csproj", "{38BD8123-9838-4984-A4D1-B8D1062197B4}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.IEX", "QuantConnect.IEX\QuantConnect.IEX.csproj", "{6324C205-9693-4FA1-9EC1-9662E569D046}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.DataSource.IEX", "QuantConnect.IEX\QuantConnect.DataSource.IEX.csproj", "{6324C205-9693-4FA1-9EC1-9662E569D046}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Tests", "..\Lean\Tests\QuantConnect.Tests.csproj", "{D6772C71-231E-44D1-9DD1-E796D393AAAB}"
 EndProject
