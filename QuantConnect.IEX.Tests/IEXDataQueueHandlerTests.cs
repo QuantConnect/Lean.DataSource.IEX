@@ -19,6 +19,7 @@ using NUnit.Framework;
 using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Tests;
+using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Microsoft.CodeAnalysis;
 using System.Threading.Tasks;
@@ -33,6 +34,9 @@ namespace QuantConnect.IEX.Tests
     [TestFixture, Explicit("This tests require a iexcloud.io api key")]
     public class IEXDataQueueHandlerTests
     {
+        private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+        private readonly string _pricePlan = Config.Get("iex-cloud-api-key");
+
         private CancellationTokenSource _cancellationTokenSource;
         private IEXDataQueueHandler iexDataQueueHandler;
 
@@ -244,7 +248,7 @@ namespace QuantConnect.IEX.Tests
             {
                 _cancellationTokenSource.Cancel();
             };
- 
+
             var configs = new[] {
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("MBLY", SecurityType.Equity, Market.USA), Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("USO", SecurityType.Equity, Market.USA), Resolution.Second)
@@ -345,12 +349,13 @@ namespace QuantConnect.IEX.Tests
                     iexDataQueueHandler.Subscribe(config, (s, e) => { }),
                     tick =>
                     {
-                        if (tick != null) 
+                        if (tick != null)
                         {
                             Log.Debug($"{nameof(IEXDataQueueHandlerTests)}: tick: {tick}");
                         }
-                    }, 
-                    () => {
+                    },
+                    () =>
+                    {
                         isSubscribeThrowException = true;
                         _cancellationTokenSource.Cancel();
                     });
@@ -358,6 +363,60 @@ namespace QuantConnect.IEX.Tests
 
             _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
             Assert.IsTrue(isSubscribeThrowException);
+        }
+
+        [Test]
+        public void CanInitializeUsingJobPacket()
+        {
+            Config.Set("iex-cloud-api-key", "");
+
+            var job = new LiveNodePacket
+            {
+                BrokerageData = new Dictionary<string, string>() {
+                    { "iex-cloud-api-key", "InvalidApiKeyThatWontBeUsed" },
+                    { "iex-price-plan", "Launch" }
+                }
+            };
+
+            using var iexDataQueueHandler = new IEXDataQueueHandler();
+
+            Assert.Zero(iexDataQueueHandler.maxAllowedSymbolLimit);
+
+            iexDataQueueHandler.SetJob(job);
+
+            Assert.Greater(iexDataQueueHandler.maxAllowedSymbolLimit, 0);
+
+            Config.Set("iex-cloud-api-key", _apiKey);
+        }
+
+        [Test]
+        public void JobPacketWontOverrideCredentials()
+        {
+            Config.Set("iex-cloud-api-key", "wrong_key");
+            Config.Set("iex-cloud-api-key", "Launch");
+
+            var job = new LiveNodePacket
+            {
+                BrokerageData = new Dictionary<string, string>() {
+                    { "iex-cloud-api-key", "InvalidApiKeyThatWontBeUsed" },
+                    { "iex-price-plan", "Enterprise" }
+                }
+            };
+
+            using var iexDataQueueHandler = new IEXDataQueueHandler();
+
+            var maxSymbolLimitBeforeSetJob = iexDataQueueHandler.maxAllowedSymbolLimit;
+
+            // it has initialized already
+            Assert.Greater(maxSymbolLimitBeforeSetJob, 0);
+
+            iexDataQueueHandler.SetJob(job);
+
+            // we use Enterprise plan in job variable => we must have unlimited maxAllowedSymbolLimit, but our config keep Launch
+            Assert.That(maxSymbolLimitBeforeSetJob, Is.EqualTo(iexDataQueueHandler.maxAllowedSymbolLimit));
+
+            Config.Set("iex-cloud-api-key", _apiKey);
+            Config.Set("iex-cloud-api-key", _pricePlan);
         }
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null, Action throwExceptionCallback = null)
@@ -385,7 +444,7 @@ namespace QuantConnect.IEX.Tests
             }).ContinueWith(task =>
             {
                 if (throwExceptionCallback != null)
-                { 
+                {
                     throwExceptionCallback();
                 }
                 Log.Error("The throwExceptionCallback is null.");

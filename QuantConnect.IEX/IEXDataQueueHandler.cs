@@ -67,7 +67,7 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Represents an API key that is read-only once assigned.
         /// </summary>
-        private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+        private string? _apiKey;
 
         /// <summary>
         /// Object used as a synchronization lock for thread-safe operations.
@@ -103,12 +103,12 @@ namespace QuantConnect.IEX
         /// <summary>
         /// Handle subscription/unSubscription processes 
         /// </summary>
-        private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
+        private EventBasedDataQueueHandlerSubscriptionManager? _subscriptionManager;
 
         /// <summary>
         /// Represents a RateGate instance used to control the rate of certain operations.
         /// </summary>
-        private readonly RateGate _rateGate;
+        private RateGate? _rateGate;
 
         private readonly CancellationTokenSource _cancellationTokenSource = new();
 
@@ -136,12 +136,12 @@ namespace QuantConnect.IEX
         /// Returns whether the data provider is connected
         /// True if the data provider is connected
         /// </summary>
-        public bool IsConnected => _clients.All(client => client.IsConnected);
+        public bool IsConnected => _clients.Count != 0 && _clients.All(client => client.IsConnected);
 
         /// <summary>
         /// Represents the maximum allowed symbol limit for a subscription.
         /// </summary>
-        public readonly int maxAllowedSymbolLimit;
+        public int maxAllowedSymbolLimit;
 
         /// <summary>
         /// Gets a value indicating whether an error has occurred on the client side. <see cref="IEXEventSourceCollection"/>
@@ -152,48 +152,28 @@ namespace QuantConnect.IEX
         private (bool, string) IsErrorClientHappen { get; set; }
 
         /// <summary>
+        /// Flag indicates that instance was initialized through <see cref="SetJob(LiveNodePacket)"/>
+        /// </summary>
+        private bool _initialized;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="IEXDataQueueHandler"/> class.
         /// </summary>
         public IEXDataQueueHandler()
         {
-            if (string.IsNullOrWhiteSpace(_apiKey))
+            if (!Config.TryGetValue<string>("iex-cloud-api-key", out var configApiKey) || string.IsNullOrEmpty(configApiKey))
             {
-                throw new ArgumentException("Invalid or missing IEX API key. Please ensure that the API key is set and not empty.");
+                // If the API key is not provided, we can't do anything.
+                // The handler might going to be initialized using a node packet job.
+                return;
             }
 
-            if (Config.TryGetValue("iex-price-plan", "Grow", out var plan) && string.IsNullOrEmpty(plan))
+            if (!Config.TryGetValue("iex-price-plan", "Grow", out var plan) || string.IsNullOrEmpty(plan))
             {
                 plan = "Grow";
             }
 
-            var (requestPerSecond, maximumClients) = RateLimits[Enum.Parse<IEXPricePlan>(plan, true)];
-            _rateGate = new RateGate(requestPerSecond, Time.OneSecond);
-
-            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-
-            _subscriptionManager.SubscribeImpl += Subscribe;
-            _subscriptionManager.UnsubscribeImpl += Unsubscribe;
-
-            ValidateSubscription();
-
-            // Set the sse-clients collection
-            foreach (var channelName in IEXDataStreamChannels.Subscriptions)
-            {
-                _clients.Add(new IEXEventSourceCollection(
-                    (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
-                    _apiKey,
-                    channelName,
-                    _rateGate,
-                    (_, errorMessage) => IsErrorClientHappen = (true, errorMessage)));
-            }
-
-            // Calculate the maximum allowed symbol limit based on the IEX price plan's client capacity.
-            // We subscribe to both quote and trade channels, so we divide by the number of subscriptions,
-            // then multiply by the maximum available symbols per connection to get the limit.
-            maxAllowedSymbolLimit = maximumClients / IEXDataStreamChannels.Subscriptions.Length * IEXDataStreamChannels.MaximumSymbolsPerConnectionLimit;
-
-            // Initiates the stream listener task.
-            StreamAction();
+            Initialize(configApiKey, plan);
         }
 
         /// <summary>
@@ -377,7 +357,7 @@ namespace QuantConnect.IEX
             }
 
             var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
-            _subscriptionManager.Subscribe(dataConfig);
+            _subscriptionManager?.Subscribe(dataConfig);
 
             return new EnumeratorWrapper(enumerator, () => IsErrorClientHappen);
         }
@@ -388,6 +368,61 @@ namespace QuantConnect.IEX
         /// <param name="job">Job we're subscribing for</param>
         public void SetJob(LiveNodePacket job)
         {
+            if (_initialized)
+            {
+                return;
+            }
+
+            if (!job.BrokerageData.TryGetValue("iex-cloud-api-key", out var apiKey) || string.IsNullOrEmpty(apiKey))
+            {
+                throw new ArgumentException("Invalid or missing IEX API key. Please ensure that the API key is set and not empty.");
+            }
+
+            if (!job.BrokerageData.TryGetValue("iex-price-plan", out var plan) || string.IsNullOrEmpty(plan))
+            {
+                plan = "Grow";
+            }
+
+            Initialize(apiKey, plan);
+        }
+
+        /// <summary>
+        /// Initializes the data queue handler and validates the product subscription
+        /// </summary>
+        /// <param name="apiKey">iex api key</param>
+        /// <param name="pricePlan">iex price plan <see cref="IEXPricePlan"/></param>
+        private void Initialize(string apiKey, string pricePlan)
+        {
+            _apiKey = apiKey;
+            var (requestPerSecond, maximumClients) = RateLimits[Enum.Parse<IEXPricePlan>(pricePlan, true)];
+            _rateGate = new RateGate(requestPerSecond, Time.OneSecond);
+
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+
+            _subscriptionManager.SubscribeImpl += Subscribe;
+            _subscriptionManager.UnsubscribeImpl += Unsubscribe;
+
+            ValidateSubscription();
+
+            // Set the sse-clients collection
+            foreach (var channelName in IEXDataStreamChannels.Subscriptions)
+            {
+                _clients.Add(new IEXEventSourceCollection(
+                    (o, message) => ProcessJsonObject(message.Item1.Message.Data, message.Item2),
+                    _apiKey,
+                    channelName,
+                    _rateGate,
+                    (_, errorMessage) => IsErrorClientHappen = (true, errorMessage)));
+            }
+
+            // Calculate the maximum allowed symbol limit based on the IEX price plan's client capacity.
+            // We subscribe to both quote and trade channels, so we divide by the number of subscriptions,
+            // then multiply by the maximum available symbols per connection to get the limit.
+            maxAllowedSymbolLimit = maximumClients / IEXDataStreamChannels.Subscriptions.Length * IEXDataStreamChannels.MaximumSymbolsPerConnectionLimit;
+
+            // Initiates the stream listener task.
+            StreamAction();
+            _initialized = true;
         }
 
         /// <summary>
@@ -409,7 +444,7 @@ namespace QuantConnect.IEX
         /// <param name="dataConfig">Subscription config to be removed</param>
         public void Unsubscribe(SubscriptionDataConfig dataConfig)
         {
-            _subscriptionManager.Unsubscribe(dataConfig);
+            _subscriptionManager?.Unsubscribe(dataConfig);
             _aggregator.Remove(dataConfig);
         }
 
@@ -639,7 +674,7 @@ namespace QuantConnect.IEX
         {
             lock (_lock)
             {
-                _rateGate.WaitToProceed();
+                _rateGate!.WaitToProceed();
 
                 var response = _restClient.Execute(new RestRequest(url, Method.GET));
 
