@@ -16,7 +16,7 @@
 
 using Newtonsoft.Json;
 
-namespace QuantConnect.IEX.Response
+namespace QuantConnect.Lean.DataSource.IEX.Response
 {
     /// <summary>
     /// Last provides trade data for executions on IEX. It is a near real time, intraday API that provides IEX last sale price, size and time. Last is ideal for developers that need a lightweight stock quote.

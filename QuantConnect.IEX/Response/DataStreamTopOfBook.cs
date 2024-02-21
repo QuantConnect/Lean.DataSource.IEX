@@ -16,7 +16,7 @@
 
 using Newtonsoft.Json;
 
-namespace QuantConnect.IEX.Response
+namespace QuantConnect.Lean.DataSource.IEX.Response
 {
     /// <summary>
     /// TOPS provides aggregated best-quoted bid and offer position in near real time for all securities on displayed limit order book from IEX. TOPS is ideal for developers needing both quote and trade data.

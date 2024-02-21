@@ -14,7 +14,7 @@
  *
 */
 
-namespace QuantConnect.IEX.Constants
+namespace QuantConnect.Lean.DataSource.IEX.Constants
 {
     /// <summary>
     /// Represents constants for accessing IEX Cloud data streams channels, specifically related to last sale and top-of-book information.

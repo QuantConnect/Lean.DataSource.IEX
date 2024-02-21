@@ -16,7 +16,7 @@
 using QuantConnect.Data;
 using System.Collections;
 
-namespace QuantConnect.IEX
+namespace QuantConnect.Lean.DataSource.IEX
 {
     /// <summary>
     /// The new enumerator wrapper for this subscription request

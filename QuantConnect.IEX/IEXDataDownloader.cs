@@ -18,17 +18,17 @@ using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 
-namespace QuantConnect.IEX
+namespace QuantConnect.Lean.DataSource.IEX
 {
     public class IEXDataDownloader : IDataDownloader, IDisposable
     {
-        private readonly IEXDataQueueHandler _handler;
+        private readonly IEXDataProvider _handler;
 
         private readonly MarketHoursDatabase _marketHoursDatabase;
 
         public IEXDataDownloader()
         {
-            _handler = new IEXDataQueueHandler();
+            _handler = new IEXDataProvider();
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
         }
 

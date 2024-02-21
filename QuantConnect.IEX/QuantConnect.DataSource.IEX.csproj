@@ -4,10 +4,10 @@
 		<Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
 		<Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
 		<TargetFramework>net6.0</TargetFramework>
-		<Product>QuantConnect.IEX</Product>
-		<AssemblyName>QuantConnect.IEX</AssemblyName>
-		<RootNamespace>QuantConnect.IEX</RootNamespace>
-		<AssemblyTitle>QuantConnect.IEX</AssemblyTitle>
+		<Product>QuantConnect.Lean.DataSource.IEX</Product>
+		<AssemblyName>QuantConnect.Lean.DataSource.IEX</AssemblyName>
+		<RootNamespace>QuantConnect.Lean.DataSource.IEX</RootNamespace>
+		<AssemblyTitle>QuantConnect.Lean.DataSource.IEX</AssemblyTitle>
 		<OutputType>Library</OutputType>
 		<OutputPath>bin\$(Configuration)</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

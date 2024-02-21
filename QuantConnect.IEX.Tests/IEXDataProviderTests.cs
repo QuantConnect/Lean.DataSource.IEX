@@ -19,6 +19,7 @@ using NUnit.Framework;
 using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Tests;
+using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Microsoft.CodeAnalysis;
 using System.Threading.Tasks;
@@ -28,13 +29,16 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Data.UniverseSelection;
 
-namespace QuantConnect.IEX.Tests
+namespace QuantConnect.Lean.DataSource.IEX.Tests
 {
     [TestFixture, Explicit("This tests require a iexcloud.io api key")]
-    public class IEXDataQueueHandlerTests
+    public class IEXDataProviderTests
     {
+        private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+        private readonly string _pricePlan = Config.Get("iex-cloud-api-key");
+
         private CancellationTokenSource _cancellationTokenSource;
-        private IEXDataQueueHandler iexDataQueueHandler;
+        private IEXDataProvider iexDataProvider;
 
         private static readonly string[] HardCodedSymbolsSNP = {
             "AAPL", "MSFT", "AMZN", "FB", "GOOGL", "GOOG", "BRK.B", "JNJ", "PG", "NVDA", "V", "JPM", "HD", "UNH", "MA", "VZ",
@@ -76,15 +80,15 @@ namespace QuantConnect.IEX.Tests
         public void SetUp()
         {
             _cancellationTokenSource = new();
-            iexDataQueueHandler = new IEXDataQueueHandler();
+            iexDataProvider = new IEXDataProvider();
         }
 
         [TearDown]
         public void TearDown()
         {
-            if (iexDataQueueHandler != null)
+            if (iexDataProvider != null)
             {
-                iexDataQueueHandler.Dispose();
+                iexDataProvider.Dispose();
             }
 
             _cancellationTokenSource.Dispose();
@@ -119,7 +123,7 @@ namespace QuantConnect.IEX.Tests
             foreach (var config in configs)
             {
                 ProcessFeed(
-                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    iexDataProvider.Subscribe(config, (s, e) => { }),
                     tick =>
                     {
                         if (tick != null)
@@ -155,7 +159,7 @@ namespace QuantConnect.IEX.Tests
 
             foreach (var config in configs)
             {
-                iexDataQueueHandler.Unsubscribe(config);
+                iexDataProvider.Unsubscribe(config);
             }
 
             _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
@@ -177,12 +181,12 @@ namespace QuantConnect.IEX.Tests
             foreach (var config in configs)
             {
                 ProcessFeed(
-                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    iexDataProvider.Subscribe(config, (s, e) => { }),
                     tick =>
                     {
                         if (tick != null)
                         {
-                            Log.Debug($"{nameof(IEXDataQueueHandlerTests)}: tick: {tick}");
+                            Log.Debug($"{nameof(IEXDataProviderTests)}: tick: {tick}");
 
                             tempDictionary.AddOrUpdate(tick.Symbol, 1, (id, count) => count + 1);
 
@@ -201,7 +205,7 @@ namespace QuantConnect.IEX.Tests
             for (int i = configs.Count; i > 2; i--)
             {
                 configs.TryDequeue(out var config);
-                iexDataQueueHandler.Unsubscribe(config);
+                iexDataProvider.Unsubscribe(config);
                 tempDictionary.TryRemove(config.Symbol, out _);
             }
 
@@ -216,7 +220,7 @@ namespace QuantConnect.IEX.Tests
             for (int i = configs.Count; i > 0; i--)
             {
                 configs.TryDequeue(out var config);
-                iexDataQueueHandler.Unsubscribe(config);
+                iexDataProvider.Unsubscribe(config);
             }
 
             Thread.Sleep(TimeSpan.FromSeconds(1));
@@ -244,7 +248,7 @@ namespace QuantConnect.IEX.Tests
             {
                 _cancellationTokenSource.Cancel();
             };
- 
+
             var configs = new[] {
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("MBLY", SecurityType.Equity, Market.USA), Resolution.Second),
                 GetSubscriptionDataConfig<TradeBar>(Symbol.Create("USO", SecurityType.Equity, Market.USA), Resolution.Second)
@@ -253,14 +257,14 @@ namespace QuantConnect.IEX.Tests
             Array.ForEach(configs, (c) =>
             {
                 ProcessFeed(
-                    iexDataQueueHandler.Subscribe(c, (s, e) => { }),
+                    iexDataProvider.Subscribe(c, (s, e) => { }),
                     callback,
                     throwExceptionCallback);
             });
 
             Assert.IsFalse(_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20)), "The cancellation token was cancelled block thread.");
 
-            iexDataQueueHandler.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
+            iexDataProvider.Unsubscribe(Enumerable.First(configs, c => string.Equals(c.Symbol.Value, "MBLY")));
 
             Log.Trace("Unsubscribing");
             _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(2));
@@ -279,12 +283,12 @@ namespace QuantConnect.IEX.Tests
             {
                 foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
                 {
-                    ProcessFeed(iexDataQueueHandler.Subscribe(config, (s, e) => { }), throwExceptionCallback: () => _cancellationTokenSource.Cancel());
+                    ProcessFeed(iexDataProvider.Subscribe(config, (s, e) => { }), throwExceptionCallback: () => _cancellationTokenSource.Cancel());
                 }
             }
 
             Assert.IsFalse(resetEvent.WaitOne(TimeSpan.FromMinutes(2), _cancellationTokenSource.Token), "The cancellation token was cancelled block thread.");
-            Assert.IsTrue(iexDataQueueHandler.IsConnected);
+            Assert.IsTrue(iexDataProvider.IsConnected);
         }
 
         [Test]
@@ -299,12 +303,12 @@ namespace QuantConnect.IEX.Tests
                 {
                     foreach (var config in GetSubscriptionDataConfigs(ticker, Resolution.Second))
                     {
-                        iexDataQueueHandler.Subscribe(config, (s, e) => { });
+                        iexDataProvider.Subscribe(config, (s, e) => { });
                     }
                 }
                 cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
             });
-            Assert.Less(iexDataQueueHandler.maxAllowedSymbolLimit, symbolCounter);
+            Assert.Less(iexDataProvider.maxAllowedSymbolLimit, symbolCounter);
         }
 
         [Test]
@@ -315,7 +319,7 @@ namespace QuantConnect.IEX.Tests
 
             foreach (var config in GetSubscriptionDataConfigs(universeSymbol, Resolution.Second))
             {
-                Assert.IsNull(iexDataQueueHandler.Subscribe(config, (s, e) => { }));
+                Assert.IsNull(iexDataProvider.Subscribe(config, (s, e) => { }));
             }
         }
 
@@ -326,7 +330,7 @@ namespace QuantConnect.IEX.Tests
 
             foreach (var config in GetSubscriptionDataConfigs(spy, Resolution.Second))
             {
-                Assert.IsNull(iexDataQueueHandler.Subscribe(config, (s, e) => { }));
+                Assert.IsNull(iexDataProvider.Subscribe(config, (s, e) => { }));
             }
         }
 
@@ -337,20 +341,21 @@ namespace QuantConnect.IEX.Tests
 
             var isSubscribeThrowException = false;
 
-            var iexDataQueueHandler = new IEXDataQueueHandler();
+            var iexDataProvider = new IEXDataProvider();
 
             foreach (var config in GetSubscriptionDataConfigs(Symbols.SPY, Resolution.Second))
             {
                 ProcessFeed(
-                    iexDataQueueHandler.Subscribe(config, (s, e) => { }),
+                    iexDataProvider.Subscribe(config, (s, e) => { }),
                     tick =>
                     {
-                        if (tick != null) 
+                        if (tick != null)
                         {
-                            Log.Debug($"{nameof(IEXDataQueueHandlerTests)}: tick: {tick}");
+                            Log.Debug($"{nameof(IEXDataProviderTests)}: tick: {tick}");
                         }
-                    }, 
-                    () => {
+                    },
+                    () =>
+                    {
                         isSubscribeThrowException = true;
                         _cancellationTokenSource.Cancel();
                     });
@@ -358,6 +363,60 @@ namespace QuantConnect.IEX.Tests
 
             _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
             Assert.IsTrue(isSubscribeThrowException);
+        }
+
+        [Test]
+        public void CanInitializeUsingJobPacket()
+        {
+            Config.Set("iex-cloud-api-key", "");
+
+            var job = new LiveNodePacket
+            {
+                BrokerageData = new Dictionary<string, string>() {
+                    { "iex-cloud-api-key", "InvalidApiKeyThatWontBeUsed" },
+                    { "iex-price-plan", "Launch" }
+                }
+            };
+
+            using var iexDataProvider = new IEXDataProvider();
+
+            Assert.Zero(iexDataProvider.maxAllowedSymbolLimit);
+
+            iexDataProvider.SetJob(job);
+
+            Assert.Greater(iexDataProvider.maxAllowedSymbolLimit, 0);
+
+            Config.Set("iex-cloud-api-key", _apiKey);
+        }
+
+        [Test]
+        public void JobPacketWontOverrideCredentials()
+        {
+            Config.Set("iex-cloud-api-key", "wrong_key");
+            Config.Set("iex-cloud-api-key", "Launch");
+
+            var job = new LiveNodePacket
+            {
+                BrokerageData = new Dictionary<string, string>() {
+                    { "iex-cloud-api-key", "InvalidApiKeyThatWontBeUsed" },
+                    { "iex-price-plan", "Enterprise" }
+                }
+            };
+
+            using var iexDataProvider = new IEXDataProvider();
+
+            var maxSymbolLimitBeforeSetJob = iexDataProvider.maxAllowedSymbolLimit;
+
+            // it has initialized already
+            Assert.Greater(maxSymbolLimitBeforeSetJob, 0);
+
+            iexDataProvider.SetJob(job);
+
+            // we use Enterprise plan in job variable => we must have unlimited maxAllowedSymbolLimit, but our config keep Launch
+            Assert.That(maxSymbolLimitBeforeSetJob, Is.EqualTo(iexDataProvider.maxAllowedSymbolLimit));
+
+            Config.Set("iex-cloud-api-key", _apiKey);
+            Config.Set("iex-cloud-api-key", _pricePlan);
         }
 
         private void ProcessFeed(IEnumerator<BaseData> enumerator, Action<BaseData> callback = null, Action throwExceptionCallback = null)
@@ -385,7 +444,7 @@ namespace QuantConnect.IEX.Tests
             }).ContinueWith(task =>
             {
                 if (throwExceptionCallback != null)
-                { 
+                {
                     throwExceptionCallback();
                 }
                 Log.Error("The throwExceptionCallback is null.");

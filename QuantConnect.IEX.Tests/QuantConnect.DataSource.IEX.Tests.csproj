@@ -7,10 +7,10 @@
 		<IsPackable>false</IsPackable>
 		<TestProjectType>UnitTest</TestProjectType>
 		<OutputPath>bin\$(Configuration)\</OutputPath>
-		<Product>QuantConnect.IEX.Tests</Product>
-		<AssemblyName>QuantConnect.IEX.Tests</AssemblyName>
-		<RootNamespace>QuantConnect.IEX.Tests</RootNamespace>
-		<AssemblyTitle>QuantConnect.IEX.Tests</AssemblyTitle>
+		<Product>QuantConnect.Lean.DataSource.IEX.Tests</Product>
+		<AssemblyName>QuantConnect.Lean.DataSource.IEX.Tests</AssemblyName>
+		<RootNamespace>QuantConnect.Lean.DataSource.IEX.Tests</RootNamespace>
+		<AssemblyTitle>QuantConnect.Lean.DataSource.IEX.Tests</AssemblyTitle>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 	</PropertyGroup>
 
@@ -26,7 +26,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\QuantConnect.IEX\QuantConnect.IEX.csproj" />
+		<ProjectReference Include="..\QuantConnect.IEX\QuantConnect.DataSource.IEX.csproj" />
 		<ProjectReference Include="..\..\Lean\Tests\QuantConnect.Tests.csproj" />
 	</ItemGroup>
 
