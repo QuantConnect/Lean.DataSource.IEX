@@ -394,7 +394,18 @@ namespace QuantConnect.Lean.DataSource.IEX
         private void Initialize(string apiKey, string pricePlan)
         {
             _apiKey = apiKey;
-            var (requestPerSecond, maximumClients) = RateLimits[Enum.Parse<IEXPricePlan>(pricePlan, true)];
+
+            IEXPricePlan parsedPricePlan;
+            try
+            {
+                parsedPricePlan = Enum.Parse<IEXPricePlan>(pricePlan, true);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.", ex);
+            }
+
+            var (requestPerSecond, maximumClients) = RateLimits[parsedPricePlan];
             _rateGate = new RateGate(requestPerSecond, Time.OneSecond);
 
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
