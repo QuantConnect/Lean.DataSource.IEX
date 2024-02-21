@@ -393,6 +393,8 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// <param name="pricePlan">iex price plan <see cref="IEXPricePlan"/></param>
         private void Initialize(string apiKey, string pricePlan)
         {
+            ValidateSubscription();
+
             _apiKey = apiKey;
 
             if (!Enum.TryParse<IEXPricePlan>(pricePlan, out var parsedPricePlan) || !Enum.IsDefined(typeof(IEXPricePlan), parsedPricePlan))
@@ -407,8 +409,6 @@ namespace QuantConnect.Lean.DataSource.IEX
 
             _subscriptionManager.SubscribeImpl += Subscribe;
             _subscriptionManager.UnsubscribeImpl += Unsubscribe;
-
-            ValidateSubscription();
 
             // Set the sse-clients collection
             foreach (var channelName in IEXDataStreamChannels.Subscriptions)
@@ -741,9 +741,9 @@ namespace QuantConnect.Lean.DataSource.IEX
             try
             {
                 const int productId = 333;
-                var userId = Config.GetInt("job-user-id");
-                var token = Config.Get("api-access-token");
-                var organizationId = Config.Get("job-organization-id", null);
+                var userId = Globals.UserId;
+                var token = Globals.UserToken;
+                var organizationId = Globals.OrganizationID;
                 // Verify we can authenticate with this user and token
                 var api = new ApiConnection(userId, token);
                 if (!api.Connected)
