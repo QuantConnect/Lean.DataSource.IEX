@@ -395,14 +395,9 @@ namespace QuantConnect.Lean.DataSource.IEX
         {
             _apiKey = apiKey;
 
-            IEXPricePlan parsedPricePlan;
-            try
+            if (!Enum.TryParse<IEXPricePlan>(pricePlan, out var parsedPricePlan) || !Enum.IsDefined(typeof(IEXPricePlan), parsedPricePlan))
             {
-                parsedPricePlan = Enum.Parse<IEXPricePlan>(pricePlan, true);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.", ex);
+                throw new ArgumentException($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.");
             }
 
             var (requestPerSecond, maximumClients) = RateLimits[parsedPricePlan];
