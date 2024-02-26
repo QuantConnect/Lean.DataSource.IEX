@@ -59,6 +59,21 @@ namespace QuantConnect.Lean.DataSource.IEX
         private static bool _invalidHistoryDataTypeWarningFired;
 
         /// <summary>
+        /// Indicates whether the warning for invalid <see cref="SecurityType"/> has been fired.
+        /// </summary>
+        private bool _invalidSecurityTypeWarningFired;
+
+        /// <summary>
+        /// Indicates whether a warning for an invalid start time has been fired, where the start time is greater than or equal to the end time in UTC.
+        /// </summary>
+        private bool _invalidStartTimeWarningFired;
+
+        /// <summary>
+        /// Indicates whether a warning for an invalid <see cref="Resolution"/> has been fired, where the resolution is neither daily nor minute-based.
+        /// </summary>
+        private bool _invalidResolutionWarningFired;
+
+        /// <summary>
         /// Represents two clients: one for the trade channel and another for the top-of-book channel.
         /// </summary>
         /// <see cref="IEXDataStreamChannels"/>
@@ -509,21 +524,33 @@ namespace QuantConnect.Lean.DataSource.IEX
                     continue;
                 }
 
-                if (request.Symbol.SecurityType != SecurityType.Equity)
+                if (!CanSubscribe(request.Symbol))
                 {
-                    Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                    if (!_invalidSecurityTypeWarningFired)
+                    {
+                        Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                        _invalidSecurityTypeWarningFired = true;
+                    }
                     continue;
                 }
 
                 if (request.StartTimeUtc >= request.EndTimeUtc)
                 {
-                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                    if (!_invalidStartTimeWarningFired)
+                    {
+                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                        _invalidStartTimeWarningFired = true;
+                    }
                     continue;
                 }
 
                 if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
                 {
-                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
+                    if (!_invalidResolutionWarningFired)
+                    {
+                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
+                        _invalidResolutionWarningFired = true;
+                    }
                     continue;
                 }
 
