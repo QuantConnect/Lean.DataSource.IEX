@@ -491,7 +491,7 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// <param name="requests">The historical data requests</param>
         /// <param name="sliceTimeZone">The time zone used when time stamping the slice instances</param>
         /// <returns>An enumerable of the slices of data covering the span specified in each request</returns>
-        public override IEnumerable<Slice> GetHistory(IEnumerable<Data.HistoryRequest> requests, DateTimeZone sliceTimeZone)
+        public override IEnumerable<Slice>? GetHistory(IEnumerable<Data.HistoryRequest> requests, DateTimeZone sliceTimeZone)
         {
             // Create subscription objects from the configs
             var subscriptions = new List<Subscription>();
@@ -506,24 +506,35 @@ namespace QuantConnect.Lean.DataSource.IEX
                             "Currently available support only for historical of type - TradeBar");
                         _invalidHistoryDataTypeWarningFired = true;
                     }
-                    return Enumerable.Empty<Slice>();
+                    continue;
                 }
 
                 if (request.Symbol.SecurityType != SecurityType.Equity)
                 {
                     Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
-                    return Enumerable.Empty<Slice>();
+                    continue;
                 }
 
                 if (request.StartTimeUtc >= request.EndTimeUtc)
                 {
                     Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
-                    return Enumerable.Empty<Slice>();
+                    continue;
+                }
+
+                if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
+                {
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
+                    continue;
                 }
 
                 var history = ProcessHistoryRequests(request);
                 var subscription = CreateSubscription(request, history);
                 subscriptions.Add(subscription);
+            }
+
+            if (subscriptions.Count == 0)
+            {
+                return null;
             }
 
             return CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone);
@@ -532,17 +543,11 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// <summary>
         /// Populate request data
         /// </summary>
-        private IEnumerable<BaseData> ProcessHistoryRequests(Data.HistoryRequest request)
+        private IEnumerable<BaseData>? ProcessHistoryRequests(Data.HistoryRequest request)
         {
             var ticker = request.Symbol.ID.Symbol;
             var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
             var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
-
-            if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
-            {
-                Log.Error("IEXDataProvider.GetHistory(): History calls for IEX only support daily & minute resolution.");
-                yield break;
-            }
 
             Log.Trace($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
 
@@ -602,6 +607,21 @@ namespace QuantConnect.Lean.DataSource.IEX
                     }
             }
 
+            return GetHistoryRequestByUrls(urls, start, end, request.Resolution, request.DataNormalizationMode, request.Symbol);
+        }
+
+        /// <summary>
+        /// Retrieves historical data by making requests to the specified URLs.
+        /// </summary>
+        /// <param name="urls">The list of URLs to retrieve historical data from.</param>
+        /// <param name="startDateTime">The start date and time for the historical data. (use to skip data which not passed condition)</param>
+        /// <param name="endDateTime">The end date and time for the historical data. (use to skip data which not passed condition)</param>
+        /// <param name="resolution">The <see cref="Resolution"/> of the historical data.</param>
+        /// <param name="dataNormalizationMode">The <seealso cref="DataNormalizationMode"/> the historical data.</param>
+        /// <param name="symbol">The <seealso cref="Symbol"/> for which historical data is being retrieved.</param>
+        /// <returns>An enumerable collection of <see cref="BaseData"/> containing the retrieved historical data.</returns>
+        private IEnumerable<BaseData> GetHistoryRequestByUrls(List<string> urls, DateTime startDateTime, DateTime endDateTime, Resolution resolution, DataNormalizationMode dataNormalizationMode, Symbol symbol)
+        {
             foreach (var url in urls)
             {
                 var response = ExecuteGetRequest(url);
@@ -631,7 +651,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                         period = TimeSpan.FromDays(1);
                     }
 
-                    if (date < start || date > end)
+                    if (date < startDateTime || date > endDateTime)
                     {
                         continue;
                     }
@@ -645,8 +665,8 @@ namespace QuantConnect.Lean.DataSource.IEX
 
                     decimal open, high, low, close, volume;
 
-                    if (request.Resolution == Resolution.Daily &&
-                        request.DataNormalizationMode == DataNormalizationMode.Raw)
+                    if (resolution == Resolution.Daily &&
+                        dataNormalizationMode == DataNormalizationMode.Raw)
                     {
                         open = item["uOpen"].Value<decimal>();
                         high = item["uHigh"].Value<decimal>();
@@ -663,7 +683,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                         volume = item["volume"].Value<int>();
                     }
 
-                    var tradeBar = new TradeBar(date, request.Symbol, open, high, low, close, volume, period);
+                    var tradeBar = new TradeBar(date, symbol, open, high, low, close, volume, period);
 
                     yield return tradeBar;
                 }

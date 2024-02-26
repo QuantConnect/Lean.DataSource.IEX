@@ -41,9 +41,9 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
 
             var parameters = new DataDownloaderGetParameters(symbol, resolution, request.StartTimeUtc, request.EndTimeUtc, tickType);
 
-            var downloadResponse = _downloader.Get(parameters).ToList();
+            var downloadResponse = _downloader.Get(parameters)?.ToList();
 
-            Assert.IsEmpty(downloadResponse);
+            Assert.IsNull(downloadResponse);
         }
 
         [Explicit("This tests require a iexcloud.io api key")]
@@ -54,7 +54,7 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
 
             var parameters = new DataDownloaderGetParameters(symbol, resolution, request.StartTimeUtc, request.EndTimeUtc, tickType);
 
-            var downloadResponse = _downloader.Get(parameters).ToList();
+            var downloadResponse = _downloader.Get(parameters)?.ToList();
 
             Assert.IsNotEmpty(downloadResponse);
 
