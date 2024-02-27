@@ -14,7 +14,6 @@
 */
 
 using QuantConnect.Data;
-using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 
@@ -50,25 +49,6 @@ namespace QuantConnect.Lean.DataSource.IEX
             var endUtc = dataDownloaderGetParameters.EndUtc;
             var tickType = dataDownloaderGetParameters.TickType;
 
-            if (tickType != TickType.Trade)
-            {
-                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}: Not supported data type - {tickType}. " +
-                    "Currently available support only for historical of type - TradeBar");
-                return null;
-            }
-
-            if (resolution != Resolution.Daily && resolution != Resolution.Minute)
-            {
-                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}: InvalidResolution. {resolution} resolution not supported, no history returned");
-                return null;
-            }
-
-            if (endUtc < startUtc)
-            {
-                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}:InvalidDateRange. The history request start date must precede the end date, no history returned");
-                return null;
-            }
-
             var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
             var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
 
@@ -86,7 +66,6 @@ namespace QuantConnect.Lean.DataSource.IEX
                                    DataNormalizationMode.Raw,
                                    TickType.Trade)
             };
-
 
             return _handler.GetHistory(historyRequests, TimeZones.EasternStandard)?.Select(slice => (BaseData)slice[symbol]);
         }
