@@ -42,7 +42,7 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// </summary>
         /// <param name="dataDownloaderGetParameters">model class for passing in parameters for historical data</param>
         /// <returns>Enumerable of base data for this symbol</returns>
-        public IEnumerable<BaseData> Get(DataDownloaderGetParameters dataDownloaderGetParameters)
+        public IEnumerable<BaseData>? Get(DataDownloaderGetParameters dataDownloaderGetParameters)
         {
             var symbol = dataDownloaderGetParameters.Symbol;
             var resolution = dataDownloaderGetParameters.Resolution;
@@ -52,19 +52,21 @@ namespace QuantConnect.Lean.DataSource.IEX
 
             if (tickType != TickType.Trade)
             {
-                yield break;
+                Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}: Not supported data type - {tickType}. " +
+                    "Currently available support only for historical of type - TradeBar");
+                return null;
             }
 
-            if (resolution != Resolution.Daily && resolution != Resolution.Minute) 
+            if (resolution != Resolution.Daily && resolution != Resolution.Minute)
             {
                 Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}: InvalidResolution. {resolution} resolution not supported, no history returned");
-                yield break;
+                return null;
             }
 
             if (endUtc < startUtc)
             {
                 Log.Error($"{nameof(IEXDataDownloader)}.{nameof(Get)}:InvalidDateRange. The history request start date must precede the end date, no history returned");
-                yield break;
+                return null;
             }
 
             var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
@@ -75,7 +77,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                                    endUtc,
                                    typeof(TradeBar),
                                    symbol,
-                                   resolution, 
+                                   resolution,
                                    exchangeHours,
                                    dataTimeZone,
                                    resolution,
@@ -85,10 +87,8 @@ namespace QuantConnect.Lean.DataSource.IEX
                                    TickType.Trade)
             };
 
-            foreach (var slice in _handler.GetHistory(historyRequests, TimeZones.EasternStandard))
-            {
-                yield return slice[symbol];
-            }
+
+            return _handler.GetHistory(historyRequests, TimeZones.EasternStandard)?.Select(slice => (BaseData)slice[symbol]);
         }
     }
 }

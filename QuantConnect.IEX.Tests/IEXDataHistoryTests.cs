@@ -136,8 +136,7 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
         {
             var slices = GetHistory(symbol, resolution, tickType, period);
 
-            Assert.IsEmpty(slices);
-            return;
+            Assert.IsNull(slices);
         }
 
         [Explicit("This tests require a iexcloud.io api key")]
@@ -228,7 +227,7 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
         {
             var requests = new[] { CreateHistoryRequest(symbol, resolution, tickType, period) };
 
-            var slices = iexDataProvider.GetHistory(requests, TimeZones.Utc).ToArray();
+            var slices = iexDataProvider.GetHistory(requests, TimeZones.Utc)?.ToArray();
             Log.Trace("Data points retrieved: " + iexDataProvider.DataPointCount);
             Log.Trace("tick Type: " + tickType);
             return slices;
