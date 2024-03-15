@@ -56,22 +56,22 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// <summary>
         /// Flag indicating whether a warning about unsupported data types in user history should be suppressed to prevent spam.
         /// </summary>
-        private static bool _invalidHistoryDataTypeWarningFired;
+        private volatile bool _invalidHistoryDataTypeWarningFired;
 
         /// <summary>
         /// Indicates whether the warning for invalid <see cref="SecurityType"/> has been fired.
         /// </summary>
-        private bool _invalidSecurityTypeWarningFired;
+        private volatile bool _invalidSecurityTypeWarningFired;
 
         /// <summary>
         /// Indicates whether a warning for an invalid start time has been fired, where the start time is greater than or equal to the end time in UTC.
         /// </summary>
-        private bool _invalidStartTimeWarningFired;
+        private volatile bool _invalidStartTimeWarningFired;
 
         /// <summary>
         /// Indicates whether a warning for an invalid <see cref="Resolution"/> has been fired, where the resolution is neither daily nor minute-based.
         /// </summary>
-        private bool _invalidResolutionWarningFired;
+        private volatile bool _invalidResolutionWarningFired;
 
         /// <summary>
         /// Represents two clients: one for the trade channel and another for the top-of-book channel.
@@ -517,9 +517,9 @@ namespace QuantConnect.Lean.DataSource.IEX
                 {
                     if (!_invalidHistoryDataTypeWarningFired)
                     {
+                        _invalidHistoryDataTypeWarningFired = true;
                         Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
                             "Currently available support only for historical of type - TradeBar");
-                        _invalidHistoryDataTypeWarningFired = true;
                     }
                     continue;
                 }
@@ -528,8 +528,8 @@ namespace QuantConnect.Lean.DataSource.IEX
                 {
                     if (!_invalidSecurityTypeWarningFired)
                     {
-                        Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
                         _invalidSecurityTypeWarningFired = true;
+                        Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
                     }
                     continue;
                 }
@@ -538,8 +538,8 @@ namespace QuantConnect.Lean.DataSource.IEX
                 {
                     if (!_invalidStartTimeWarningFired)
                     {
-                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
                         _invalidStartTimeWarningFired = true;
+                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
                     }
                     continue;
                 }
@@ -548,8 +548,8 @@ namespace QuantConnect.Lean.DataSource.IEX
                 {
                     if (!_invalidResolutionWarningFired)
                     {
-                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
                         _invalidResolutionWarningFired = true;
+                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
                     }
                     continue;
                 }
