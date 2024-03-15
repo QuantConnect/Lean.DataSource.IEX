@@ -14,6 +14,7 @@
 */
 
 using System;
+using NodaTime;
 using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Data;
@@ -65,7 +66,7 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
                     .SetDescription("Valid parameters - Minute resolution, 5 days period.")
                     .SetCategory("Valid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45))
                     .SetDescription("Valid parameters - Beyond 45 days, Minute resolution.")
                     .SetCategory("Valid");
             }
@@ -235,25 +236,42 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
 
         internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            var utcNow = DateTime.UtcNow;
+            var end = new DateTime(2024, 3, 15, 16, 0, 0);
+
+            if (resolution == Resolution.Daily)
+            {
+                end = end.Date.AddDays(1);
+            }
+
+            return CreateHistoryRequest(symbol, resolution, tickType, end.Subtract(period), end);
+        }
+
+        internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
+            SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
+        {
+            if (exchangeHours == null)
+            {
+                exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
+            }
+
+            if (dataTimeZone == null)
+            {
+                dataTimeZone = TimeZones.NewYork;
+            }
 
             var dataType = LeanData.GetDataType(resolution, tickType);
-
-            var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
-            var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
-
             return new HistoryRequest(
-                startTimeUtc: utcNow.Add(-period),
-                endTimeUtc: utcNow,
+                startTimeUtc: startDateTime,
+                endTimeUtc: endDateTime,
                 dataType: dataType,
                 symbol: symbol,
                 resolution: resolution,
                 exchangeHours: exchangeHours,
                 dataTimeZone: dataTimeZone,
-                fillForwardResolution: resolution,
+                fillForwardResolution: null,
                 includeExtendedMarketHours: true,
                 isCustomData: false,
-                DataNormalizationMode.Raw,
+                dataNormalizationMode: DataNormalizationMode.Adjusted,
                 tickType: tickType
                 );
         }
