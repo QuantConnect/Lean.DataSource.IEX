@@ -584,7 +584,8 @@ namespace QuantConnect.Lean.DataSource.IEX
                 return null;
             }
 
-            var ticker = request.Symbol.Value;
+            // Always obtain the most relevant ticker symbol based on the current time.
+            var ticker = SecurityIdentifier.Ticker(request.Symbol, DateTime.UtcNow);
             var startExchangeDateTime = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
             var endExchangeDateTime = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
 
