@@ -14,8 +14,8 @@
 */
 
 using QuantConnect.Data;
+using QuantConnect.Util;
 using QuantConnect.Securities;
-using QuantConnect.Data.Market;
 
 namespace QuantConnect.Lean.DataSource.IEX
 {
@@ -44,30 +44,25 @@ namespace QuantConnect.Lean.DataSource.IEX
         public IEnumerable<BaseData>? Get(DataDownloaderGetParameters dataDownloaderGetParameters)
         {
             var symbol = dataDownloaderGetParameters.Symbol;
-            var resolution = dataDownloaderGetParameters.Resolution;
-            var startUtc = dataDownloaderGetParameters.StartUtc;
-            var endUtc = dataDownloaderGetParameters.EndUtc;
-            var tickType = dataDownloaderGetParameters.TickType;
 
             var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
             var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
 
-            var historyRequests = new[] {
-                new HistoryRequest(startUtc,
-                                   endUtc,
-                                   typeof(TradeBar),
-                                   symbol,
-                                   resolution,
-                                   exchangeHours,
-                                   dataTimeZone,
-                                   resolution,
-                                   true,
-                                   false,
-                                   DataNormalizationMode.Raw,
-                                   TickType.Trade)
-            };
+            var historyRequests = new HistoryRequest(
+                dataDownloaderGetParameters.StartUtc,
+                dataDownloaderGetParameters.EndUtc,
+                LeanData.GetDataType(dataDownloaderGetParameters.Resolution, dataDownloaderGetParameters.TickType),
+                symbol,
+                dataDownloaderGetParameters.Resolution,
+                exchangeHours,
+                dataTimeZone,
+                dataDownloaderGetParameters.Resolution,
+                true,
+                false,
+                DataNormalizationMode.Raw,
+                dataDownloaderGetParameters.TickType);
 
-            return _handler.GetHistory(historyRequests, TimeZones.EasternStandard)?.Select(slice => (BaseData)slice[symbol]);
+            return _handler.ProcessHistoryRequests(historyRequests);
         }
     }
 }

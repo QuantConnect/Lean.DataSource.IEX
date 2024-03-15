@@ -512,49 +512,13 @@ namespace QuantConnect.Lean.DataSource.IEX
             var subscriptions = new List<Subscription>();
             foreach (var request in requests)
             {
-                // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
-                if (request.TickType != TickType.Trade)
-                {
-                    if (!_invalidHistoryDataTypeWarningFired)
-                    {
-                        _invalidHistoryDataTypeWarningFired = true;
-                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
-                            "Currently available support only for historical of type - TradeBar");
-                    }
-                    continue;
-                }
-
-                if (!CanSubscribe(request.Symbol))
-                {
-                    if (!_invalidSecurityTypeWarningFired)
-                    {
-                        _invalidSecurityTypeWarningFired = true;
-                        Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
-                    }
-                    continue;
-                }
-
-                if (request.StartTimeUtc >= request.EndTimeUtc)
-                {
-                    if (!_invalidStartTimeWarningFired)
-                    {
-                        _invalidStartTimeWarningFired = true;
-                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
-                    }
-                    continue;
-                }
-
-                if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
-                {
-                    if (!_invalidResolutionWarningFired)
-                    {
-                        _invalidResolutionWarningFired = true;
-                        Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
-                    }
-                    continue;
-                }
-
                 var history = ProcessHistoryRequests(request);
+
+                if (history == null)
+                {
+                    continue;
+                }
+
                 var subscription = CreateSubscription(request, history);
                 subscriptions.Add(subscription);
             }
@@ -570,8 +534,50 @@ namespace QuantConnect.Lean.DataSource.IEX
         /// <summary>
         /// Populate request data
         /// </summary>
-        private IEnumerable<BaseData>? ProcessHistoryRequests(Data.HistoryRequest request)
+        public IEnumerable<BaseData>? ProcessHistoryRequests(Data.HistoryRequest request)
         {
+            // IEX does return historical TradeBar - give one time warning if inconsistent data type was requested
+            if (request.TickType != TickType.Trade)
+            {
+                if (!_invalidHistoryDataTypeWarningFired)
+                {
+                    _invalidHistoryDataTypeWarningFired = true;
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Not supported data type - {request.DataType.Name}. " +
+                        "Currently available support only for historical of type - TradeBar");
+                }
+                return null;
+            }
+
+            if (!CanSubscribe(request.Symbol))
+            {
+                if (!_invalidSecurityTypeWarningFired)
+                {
+                    _invalidSecurityTypeWarningFired = true;
+                    Log.Trace($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                }
+                return null;
+            }
+
+            if (request.StartTimeUtc >= request.EndTimeUtc)
+            {
+                if (!_invalidStartTimeWarningFired)
+                {
+                    _invalidStartTimeWarningFired = true;
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                }
+                return null;
+            }
+
+            if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
+            {
+                if (!_invalidResolutionWarningFired)
+                {
+                    _invalidResolutionWarningFired = true;
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls for IEX only support daily & minute resolution.");
+                }
+                return null;
+            }
+
             var ticker = request.Symbol.ID.Symbol;
             var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
             var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
