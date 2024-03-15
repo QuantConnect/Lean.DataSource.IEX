@@ -160,6 +160,22 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
             Assert.That(slices, Is.Ordered.By("Time"));
         }
 
+        [Explicit("This tests require a iexcloud.io api key")]
+        [TestCase("GOOGL", Resolution.Daily, "2013/1/3", "2015/12/29", Description = "October 2, 2015. [GOOG -> GOOGL]")]
+        [TestCase("META", Resolution.Daily, "2020/1/3", "2023/12/29", Description = "October 28, 2021. [FB -> META]")]
+        public void GetAncientEquityHistoricalData(string ticker, Resolution resolution, DateTime startDate, DateTime endDate)
+        {
+            var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+
+            var request = CreateHistoryRequest(symbol, resolution, TickType.Trade, startDate, endDate);
+
+            var slices = iexDataProvider.GetHistory(new[] { request }, TimeZones.NewYork)?.ToList();
+
+            Assert.Greater(slices.Count, 1);
+            Assert.That(slices.First().Time.Date, Is.EqualTo(startDate));
+            Assert.That(slices.Last().Time.Date, Is.LessThanOrEqualTo(endDate));
+        }
+
         internal static void AssertTradeBar(Symbol expectedSymbol, Resolution resolution, BaseData baseData, Symbol actualSymbol = null)
         {
             if (actualSymbol != null)

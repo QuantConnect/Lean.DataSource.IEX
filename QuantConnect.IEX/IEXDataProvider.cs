@@ -74,6 +74,12 @@ namespace QuantConnect.Lean.DataSource.IEX
         private volatile bool _invalidResolutionWarningFired;
 
         /// <summary>
+        /// Indicates whether a warning has been triggered for reaching the limit of <see cref="Resolution.Minute"/> resolution, 
+        /// where the startDateTime is not greater than 2 years.
+        /// </summary>
+        private volatile bool _limitMinuteResolutionWarningFired;
+
+        /// <summary>
         /// Represents two clients: one for the trade channel and another for the top-of-book channel.
         /// </summary>
         /// <see cref="IEXDataStreamChannels"/>
@@ -578,21 +584,30 @@ namespace QuantConnect.Lean.DataSource.IEX
                 return null;
             }
 
-            var ticker = request.Symbol.ID.Symbol;
-            var start = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
-            var end = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
+            var ticker = request.Symbol.Value;
+            var startExchangeDateTime = ConvertTickTimeBySymbol(request.Symbol, request.StartTimeUtc);
+            var endExchangeDateTime = ConvertTickTimeBySymbol(request.Symbol, request.EndTimeUtc);
 
-            Log.Trace($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{start} - {end}].");
+            if (request.Resolution == Resolution.Minute && startExchangeDateTime <= DateTime.Today.AddYears(-2))
+            {
+                if (!_limitMinuteResolutionWarningFired)
+                {
+                    _limitMinuteResolutionWarningFired = true;
+                    Log.Error($"{nameof(IEXDataProvider)}.{nameof(GetHistory)}: History calls with minute resolution for IEX available only not more 2 years.");
+                }
+                return null;
+            }
 
-            var span = end - start;
+            Log.Trace($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)}: {request.Symbol.SecurityType}.{ticker}, Resolution: {request.Resolution}, DateTime: [{startExchangeDateTime} - {endExchangeDateTime}].");
+
             var urls = new List<string>();
 
             switch (request.Resolution)
             {
                 case Resolution.Minute:
                     {
-                        var begin = start;
-                        while (begin < end)
+                        var begin = startExchangeDateTime;
+                        while (begin < endExchangeDateTime)
                         {
                             var url = $"{BaseUrl}/{ticker}/chart/date/{begin.ToStringInvariant("yyyyMMdd")}?token={_apiKey}";
                             urls.Add(url);
@@ -603,35 +618,19 @@ namespace QuantConnect.Lean.DataSource.IEX
                     }
                 case Resolution.Daily:
                     {
-                        string suffix;
-                        if (span.Days < 30)
+                        // To retrieve a specific start-to-end dateTime range, calculate the duration between the current time and the startExchangeDateTime.
+                        var span = DateTime.Now - startExchangeDateTime;
+
+                        string suffix = span.Days switch
                         {
-                            suffix = "1m";
-                        }
-                        else if (span.Days < 3 * 30)
-                        {
-                            suffix = "3m";
-                        }
-                        else if (span.Days < 6 * 30)
-                        {
-                            suffix = "6m";
-                        }
-                        else if (span.Days < 12 * 30)
-                        {
-                            suffix = "1y";
-                        }
-                        else if (span.Days < 24 * 30)
-                        {
-                            suffix = "2y";
-                        }
-                        else if (span.Days < 60 * 30)
-                        {
-                            suffix = "5y";
-                        }
-                        else
-                        {
-                            suffix = "max";   // max is 15 years
-                        }
+                            < 30 => "1m",
+                            < 3 * 30 => "3m",
+                            < 6 * 30 => "6m",
+                            < 12 * 30 => "1y",
+                            < 24 * 30 => "2y",
+                            < 60 * 30 => "5y",
+                            _ => "max" // max is 15 years
+                        };
 
                         var url = $"{BaseUrl}/{ticker}/chart/{suffix}?token={_apiKey}";
                         urls.Add(url);
@@ -640,7 +639,9 @@ namespace QuantConnect.Lean.DataSource.IEX
                     }
             }
 
-            return GetHistoryRequestByUrls(urls, start, end, request.Resolution, request.DataNormalizationMode, request.Symbol);
+            Log.Debug($"{nameof(IEXDataProvider)}.{nameof(ProcessHistoryRequests)}: {string.Join("\n", urls)}");
+
+            return GetHistoryRequestByUrls(urls, startExchangeDateTime, endExchangeDateTime, request.Resolution, request.DataNormalizationMode, request.Symbol);
         }
 
         /// <summary>
@@ -684,7 +685,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                         period = TimeSpan.FromDays(1);
                     }
 
-                    if (date < startDateTime || date > endDateTime)
+                    if (!(date >= startDateTime && date < endDateTime))
                     {
                         continue;
                     }
@@ -716,9 +717,7 @@ namespace QuantConnect.Lean.DataSource.IEX
                         volume = item["volume"].Value<int>();
                     }
 
-                    var tradeBar = new TradeBar(date, symbol, open, high, low, close, volume, period);
-
-                    yield return tradeBar;
+                    yield return new TradeBar(ConvertTickTimeBySymbol(symbol, date), symbol, open, high, low, close, volume, period);
                 }
             }
         }
