@@ -14,6 +14,7 @@
 */
 
 using System;
+using NodaTime;
 using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Data;
@@ -65,7 +66,7 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
                     .SetDescription("Valid parameters - Minute resolution, 5 days period.")
                     .SetCategory("Valid");
 
-                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45), true)
+                yield return new TestCaseData(Symbols.SPY, Resolution.Minute, TickType.Trade, TimeSpan.FromDays(45))
                     .SetDescription("Valid parameters - Beyond 45 days, Minute resolution.")
                     .SetCategory("Valid");
             }
@@ -159,6 +160,22 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
             Assert.That(slices, Is.Ordered.By("Time"));
         }
 
+        [Explicit("This tests require a iexcloud.io api key")]
+        [TestCase("GOOGL", Resolution.Daily, "2013/1/3", "2015/12/29", Description = "October 2, 2015. [GOOG -> GOOGL]")]
+        [TestCase("META", Resolution.Daily, "2020/1/3", "2023/12/29", Description = "October 28, 2021. [FB -> META]")]
+        public void GetAncientEquityHistoricalData(string ticker, Resolution resolution, DateTime startDate, DateTime endDate)
+        {
+            var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+
+            var request = CreateHistoryRequest(symbol, resolution, TickType.Trade, startDate, endDate);
+
+            var slices = iexDataProvider.GetHistory(new[] { request }, TimeZones.NewYork)?.ToList();
+
+            Assert.Greater(slices.Count, 1);
+            Assert.That(slices.First().Time.Date, Is.EqualTo(startDate));
+            Assert.That(slices.Last().Time.Date, Is.LessThanOrEqualTo(endDate));
+        }
+
         internal static void AssertTradeBar(Symbol expectedSymbol, Resolution resolution, BaseData baseData, Symbol actualSymbol = null)
         {
             if (actualSymbol != null)
@@ -235,25 +252,42 @@ namespace QuantConnect.Lean.DataSource.IEX.Tests
 
         internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, TimeSpan period)
         {
-            var utcNow = DateTime.UtcNow;
+            var end = new DateTime(2024, 3, 15, 16, 0, 0);
+
+            if (resolution == Resolution.Daily)
+            {
+                end = end.Date.AddDays(1);
+            }
+
+            return CreateHistoryRequest(symbol, resolution, tickType, end.Subtract(period), end);
+        }
+
+        internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
+            SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
+        {
+            if (exchangeHours == null)
+            {
+                exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
+            }
+
+            if (dataTimeZone == null)
+            {
+                dataTimeZone = TimeZones.NewYork;
+            }
 
             var dataType = LeanData.GetDataType(resolution, tickType);
-
-            var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
-            var dataTimeZone = _marketHoursDatabase.GetDataTimeZone(symbol.ID.Market, symbol, symbol.SecurityType);
-
             return new HistoryRequest(
-                startTimeUtc: utcNow.Add(-period),
-                endTimeUtc: utcNow,
+                startTimeUtc: startDateTime,
+                endTimeUtc: endDateTime,
                 dataType: dataType,
                 symbol: symbol,
                 resolution: resolution,
                 exchangeHours: exchangeHours,
                 dataTimeZone: dataTimeZone,
-                fillForwardResolution: resolution,
+                fillForwardResolution: null,
                 includeExtendedMarketHours: true,
                 isCustomData: false,
-                DataNormalizationMode.Raw,
+                dataNormalizationMode: DataNormalizationMode.Adjusted,
                 tickType: tickType
                 );
         }
