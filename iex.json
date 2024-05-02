@@ -11,5 +11,22 @@
     ],
     "data-supported": [ "Equity" ], 
     "documentation": "/docs/v2/lean-cli/datasets/iex-cloud",
-    "more-information": "https://iexcloud.io/"
+    "more-information": "https://iexcloud.io/",
+    "module-specification": {
+        "download": {
+            "data-types": [
+                "Trade"
+            ],
+            "resolutions": [
+                "Minute",
+                "Daily"
+            ],
+            "security-types": [
+                "Equity"
+            ],
+            "markets": [
+                "USA"
+            ]
+        }
+    }
 }
